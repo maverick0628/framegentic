@@ -22,7 +22,7 @@ fi
 echo "Building $PRODUCT $VERSION ($BUILD_NUM)…"
 swift build -c release
 
-echo "Bundling $APP…"
+echo "Bundling ${APP}…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/release/$PRODUCT" "$APP/Contents/MacOS/"
