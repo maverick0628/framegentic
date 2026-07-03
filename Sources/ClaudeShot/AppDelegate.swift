@@ -1,96 +1,222 @@
-import Cocoa
+import AppKit
+import ApplicationServices
+import ServiceManagement
+import ClaudeShotKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem!
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private var statusItem: NSStatusItem?
     private let screenshot = ScreenshotService()
+    private let automator = ClaudeAutomator()
     private let hotKey = HotKeyManager()
+    private var isCapturing = false
+    private var hotKeyRegistered = false
+
+    private static let autoSendKey = "AutoSendAfterPaste"
+
+    private var autoSend: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.autoSendKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.autoSendKey) }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        ProcessInfo.processInfo.disableAutomaticTermination("menu bar app")
-        ProcessInfo.processInfo.disableSuddenTermination()
         setupStatusBar()
         hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
-        hotKey.register()
-        if !AXIsProcessTrusted() {
-            let _ = AXIsProcessTrustedWithOptions(
-                [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            )
-        }
-        NSLog("ClaudeShot launched")
+        hotKeyRegistered = hotKey.register()
+        screenshot.prewarm()
+        Log.app.info("ClaudeShot launched, hotkey registered: \(self.hotKeyRegistered)")
     }
+
+    // MARK: - Status bar
 
     private func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.autosaveName = "ClaudeShotStatusItem"
-        guard let button = statusItem.button else { return }
-        if let iconPath = Bundle.main.path(forResource: "MenuBarIcon", ofType: "png"),
-           let img = NSImage(contentsOfFile: iconPath) {
-            img.size = NSSize(width: 18, height: 18)
-            img.isTemplate = true
-            button.image = img
-        } else if let img = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "ClaudeShot") {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            button.image = img.withSymbolConfiguration(config)
-        } else {
-            button.title = "CS"
-        }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "ClaudeShotStatusItem"
+        item.button?.image = Self.menuBarIcon()
 
         let menu = NSMenu()
-        let item = NSMenuItem(title: "Screenshot → Claude", action: #selector(screenshotToClaude), keyEquivalent: "6")
-        item.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(item)
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit ClaudeShot", action: #selector(quit), keyEquivalent: "q"))
-        statusItem.menu = menu
+        menu.delegate = self
+        item.menu = menu
+        statusItem = item
     }
 
-    @objc private func screenshotToClaude() {
-        screenshot.captureToClipboard { [weak self] ok in
-            guard ok else {
-                NSLog("ClaudeShot: capture failed")
-                return
+    private static func menuBarIcon() -> NSImage? {
+        if let image = NSImage(named: "MenuBarIcon") {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = true
+            return image
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "ClaudeShot")?
+            .withSymbolConfiguration(config)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        let config = HotKeyConfig.standard
+        let capture = NSMenuItem(
+            title: "Screenshot → Claude",
+            action: #selector(captureFromMenu),
+            keyEquivalent: config.menuKeyEquivalent
+        )
+        capture.keyEquivalentModifierMask = config.menuModifiers
+        capture.target = self
+        menu.addItem(capture)
+
+        if !hotKeyRegistered {
+            let warning = NSMenuItem(
+                title: "Hotkey unavailable — is ⌘⇧6 taken by macOS?",
+                action: nil,
+                keyEquivalent: ""
+            )
+            warning.isEnabled = false
+            menu.addItem(warning)
+        }
+
+        menu.addItem(.separator())
+
+        let send = NSMenuItem(
+            title: "Send Automatically After Paste",
+            action: #selector(toggleAutoSend),
+            keyEquivalent: ""
+        )
+        send.target = self
+        send.state = autoSend ? .on : .off
+        menu.addItem(send)
+
+        let login = NSMenuItem(
+            title: "Start at Login",
+            action: #selector(toggleLoginItem),
+            keyEquivalent: ""
+        )
+        login.target = self
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+
+        var permissionItems: [NSMenuItem] = []
+        if !CGPreflightScreenCaptureAccess() {
+            let item = NSMenuItem(
+                title: "Grant Screen Recording…",
+                action: #selector(openScreenRecordingSettings),
+                keyEquivalent: ""
+            )
+            item.target = self
+            permissionItems.append(item)
+        }
+        if !AXIsProcessTrusted() {
+            let item = NSMenuItem(
+                title: "Grant Accessibility…",
+                action: #selector(openAccessibilitySettings),
+                keyEquivalent: ""
+            )
+            item.target = self
+            permissionItems.append(item)
+        }
+        if !permissionItems.isEmpty {
+            menu.addItem(.separator())
+            permissionItems.forEach { menu.addItem($0) }
+        }
+
+        menu.addItem(.separator())
+
+        let about = NSMenuItem(title: "About ClaudeShot", action: #selector(showAbout), keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
+
+        let quit = NSMenuItem(title: "Quit ClaudeShot", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+    }
+
+    // MARK: - Capture flow
+
+    @objc private func captureFromMenu() {
+        screenshotToClaude()
+    }
+
+    private func screenshotToClaude() {
+        guard !isCapturing else { return }
+        isCapturing = true
+        Task {
+            defer { isCapturing = false }
+            do {
+                let changeCount = try await screenshot.captureToClipboard()
+                try await automator.deliver(autoSend: autoSend, clipboardChangeCount: changeCount)
+            } catch {
+                report(error)
             }
-            self?.activateClaudeAndPaste()
         }
     }
 
-    private func activateClaudeAndPaste() {
-        let claude = NSWorkspace.shared.runningApplications.first(where: {
-            $0.localizedName == "Claude"
-        })
-        if let claude {
-            claude.activate()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.simulatePaste() }
+    private func report(_ error: Error) {
+        Log.app.error("\(error.localizedDescription, privacy: .public)")
+
+        let settingsPane: String?
+        switch error {
+        case CaptureError.screenRecordingDenied:
+            settingsPane = "Privacy_ScreenCapture"
+        case PasteError.accessibilityDenied:
+            settingsPane = "Privacy_Accessibility"
+        default:
+            settingsPane = nil
+        }
+
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "ClaudeShot"
+        alert.informativeText = error.localizedDescription
+        if let settingsPane {
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                openSettings(pane: settingsPane)
+            }
         } else {
-            let url = URL(fileURLWithPath: "/Applications/Claude.app")
-            let config = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.simulatePaste() }
-            }
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 
-    private func simulatePaste() {
-        guard AXIsProcessTrusted() else {
-            NSLog("ClaudeShot: paste blocked — Accessibility not granted")
+    // MARK: - Menu actions
+
+    @objc private func toggleAutoSend() {
+        autoSend.toggle()
+    }
+
+    @objc private func toggleLoginItem() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            Log.app.error("Login item toggle failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    @objc private func openScreenRecordingSettings() {
+        openSettings(pane: "Privacy_ScreenCapture")
+    }
+
+    @objc private func openAccessibilitySettings() {
+        openSettings(pane: "Privacy_Accessibility")
+    }
+
+    private func openSettings(pane: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else {
             return
         }
-        let src = CGEventSource(stateID: CGEventSourceStateID.combinedSessionState)
-        let pasteDown = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true)
-        pasteDown?.flags = CGEventFlags.maskCommand
-        let pasteUp = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false)
-        pasteUp?.flags = CGEventFlags.maskCommand
-        pasteDown?.post(tap: CGEventTapLocation.cghidEventTap)
-        pasteUp?.post(tap: CGEventTapLocation.cghidEventTap)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            let src2 = CGEventSource(stateID: CGEventSourceStateID.combinedSessionState)
-            let returnDown = CGEvent(keyboardEventSource: src2, virtualKey: 0x24, keyDown: true)
-            let returnUp = CGEvent(keyboardEventSource: src2, virtualKey: 0x24, keyDown: false)
-            returnDown?.post(tap: CGEventTapLocation.cghidEventTap)
-            returnUp?.post(tap: CGEventTapLocation.cghidEventTap)
-        }
+        NSWorkspace.shared.open(url)
     }
 
-    @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func showAbout() {
+        NSApp.activate()
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
+    }
 }
