@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.claudeshot.app</string>
+    <string>com.duncansmith.claudeshot</string>
     <key>CFBundleName</key>
     <string>ClaudeShot</string>
     <key>CFBundleDisplayName</key>
@@ -11,7 +11,7 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>0.0.0</string>
     <key>CFBundleExecutable</key>
     <string>ClaudeShot</string>
     <key>CFBundleIconFile</key>
@@ -22,6 +22,10 @@
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Duncan Smith. MIT License.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>ClaudeShot needs screen capture access to take screenshots for Claude analysis.</string>
 </dict>
