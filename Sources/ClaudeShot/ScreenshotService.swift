@@ -1,5 +1,6 @@
 import AppKit
-import ScreenCaptureKit
+// @preconcurrency: older SDKs (CI runners) don't mark SCK types Sendable yet.
+@preconcurrency import ScreenCaptureKit
 import ClaudeShotKit
 
 enum CaptureError: LocalizedError {
