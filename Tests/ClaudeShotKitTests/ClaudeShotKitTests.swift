@@ -175,3 +175,56 @@ final class KeyCodeNamesTests: XCTestCase {
         XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_UpArrow)), "\u{F700}")
     }
 }
+
+final class HotKeyValidatorTests: XCTestCase {
+    private func config(_ keyCode: Int, _ modifiers: Int) -> HotKeyConfig {
+        HotKeyConfig(keyCode: UInt32(keyCode), carbonModifiers: UInt32(modifiers))
+    }
+
+    // The trap this test exists for: if anyone ever adds ⌘⇧6 to the reserved
+    // table, the app rejects its own default and Reset to Default can never work.
+    func testAcceptsItsOwnDefault() {
+        XCTAssertEqual(HotKeyValidator.validate(.default), .valid)
+    }
+
+    func testAcceptsOrdinaryCombos() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_C, optionKey | shiftKey)),
+                       .valid)
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_7, cmdKey | shiftKey)),
+                       .valid)
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_F13, controlKey)), .valid)
+    }
+
+    func testRejectsShiftOnlyAndBareKeys() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_C, 0)),
+                       .rejected(.missingRequiredModifier))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_C, shiftKey)),
+                       .rejected(.missingRequiredModifier))
+    }
+
+    func testRejectsReservedCombosWithTheirOwner() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Space, cmdKey)),
+                       .rejected(.reserved(owner: "Spotlight")))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Tab, cmdKey)),
+                       .rejected(.reserved(owner: "the app switcher")))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_Q, cmdKey)),
+                       .rejected(.reserved(owner: "Quit")))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_4, cmdKey | shiftKey)),
+                       .rejected(.reserved(owner: "Screenshot")))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_UpArrow, controlKey)),
+                       .rejected(.reserved(owner: "Mission Control")))
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Escape, optionKey | cmdKey)),
+                       .rejected(.reserved(owner: "Force Quit")))
+    }
+
+    // Reserved entries match on the exact modifier set, so a near miss is fine.
+    func testReservedMatchIsExact() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Space, cmdKey | shiftKey)), .valid)
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_Q, optionKey)), .valid)
+    }
+
+    func testModifierRuleIsCheckedBeforeTheReservedTable() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Space, 0)),
+                       .rejected(.missingRequiredModifier))
+    }
+}
