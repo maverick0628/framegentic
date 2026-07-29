@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = HotKeyManager()
     private var isCapturing = false
     private var hotKeyRegistered = false
+    private let hotKeyStore = HotKeyStore()
+    private var hotKeyConfig = HotKeyConfig.default
 
     private static let autoSendKey = "AutoSendAfterPaste"
 
@@ -22,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
-        hotKeyRegistered = hotKey.register()
+        hotKeyConfig = hotKeyStore.load()
+        hotKeyRegistered = hotKey.register(hotKeyConfig)
         screenshot.prewarm()
         Log.app.info("ClaudeShot launched, hotkey registered: \(self.hotKeyRegistered)")
     }
@@ -54,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let config = HotKeyConfig.default
+        let config = hotKeyConfig
         let capture = NSMenuItem(
             title: "Screenshot → Claude",
             action: #selector(captureFromMenu),
@@ -66,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if !hotKeyRegistered {
             let warning = NSMenuItem(
-                title: "Hotkey unavailable — is ⌘⇧6 taken by macOS?",
+                title: "Hotkey unavailable — is \(config.displayString) taken?",
                 action: nil,
                 keyEquivalent: ""
             )
