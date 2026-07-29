@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let config = HotKeyConfig.standard
+        let config = HotKeyConfig.default
         let capture = NSMenuItem(
             title: "Screenshot → Claude",
             action: #selector(captureFromMenu),

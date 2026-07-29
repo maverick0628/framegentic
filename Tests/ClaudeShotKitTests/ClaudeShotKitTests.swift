@@ -84,12 +84,51 @@ final class PasteGuardTests: XCTestCase {
 }
 
 final class HotKeyConfigTests: XCTestCase {
+    // Preserves the original guarantee: the shipped default must stay ⌘⇧6.
     func testMenuAndCarbonHotKeyDefinitionsAgree() {
-        let c = HotKeyConfig.standard
+        let c = HotKeyConfig.default
         XCTAssertEqual(c.keyCode, UInt32(kVK_ANSI_6))
         XCTAssertEqual(c.carbonModifiers, UInt32(cmdKey | shiftKey))
         XCTAssertEqual(c.menuKeyEquivalent, "6")
         XCTAssertEqual(c.menuModifiers, [.command, .shift])
+    }
+
+    func testRoundTripsThroughCodable() throws {
+        let original = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
+                                    carbonModifiers: UInt32(optionKey | shiftKey))
+        let decoded = try JSONDecoder().decode(
+            HotKeyConfig.self, from: JSONEncoder().encode(original))
+        XCTAssertEqual(decoded, original)
+    }
+
+    func testCarbonAndNSModifierMappingRoundTrips() {
+        let all = UInt32(cmdKey | shiftKey | optionKey | controlKey)
+        XCTAssertEqual(
+            HotKeyConfig.carbonModifiers(from: HotKeyConfig.modifierFlags(fromCarbon: all)),
+            all)
+        XCTAssertEqual(
+            HotKeyConfig.carbonModifiers(from: HotKeyConfig.modifierFlags(fromCarbon: 0)), 0)
+        XCTAssertEqual(HotKeyConfig.modifierFlags(fromCarbon: UInt32(controlKey)), [.control])
+        XCTAssertEqual(HotKeyConfig.carbonModifiers(from: [.option]), UInt32(optionKey))
+    }
+
+    // Arrow keys and function keys arrive carrying .function and .numericPad;
+    // only the four real modifiers may survive the mapping.
+    func testMappingIgnoresIncidentalEventFlags() {
+        XCTAssertEqual(
+            HotKeyConfig.carbonModifiers(from: [.command, .function, .numericPad, .capsLock]),
+            UInt32(cmdKey))
+    }
+
+    func testDisplayStringUsesCanonicalModifierOrder() {
+        let scrambled = HotKeyConfig(
+            keyCode: UInt32(kVK_ANSI_C),
+            carbonModifiers: UInt32(cmdKey | shiftKey | optionKey | controlKey))
+        XCTAssertEqual(scrambled.displayString, "⌃⌥⇧⌘C")
+        XCTAssertEqual(HotKeyConfig.default.displayString, "⇧⌘6")
+        XCTAssertEqual(
+            HotKeyConfig(keyCode: UInt32(kVK_Space),
+                         carbonModifiers: UInt32(optionKey)).displayString, "⌥␣")
     }
 }
 

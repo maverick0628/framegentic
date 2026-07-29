@@ -44,7 +44,7 @@ final class HotKeyManager {
             return false
         }
 
-        let config = HotKeyConfig.standard
+        let config = HotKeyConfig.default
         let hotKeyID = EventHotKeyID(signature: OSType(0x4353_4854), id: 1) // "CSHT"
         let registerStatus = RegisterEventHotKey(
             config.keyCode,
