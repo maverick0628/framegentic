@@ -92,3 +92,47 @@ final class HotKeyConfigTests: XCTestCase {
         XCTAssertEqual(c.menuModifiers, [.command, .shift])
     }
 }
+
+final class KeyCodeNamesTests: XCTestCase {
+    func testNonPrintingKeysUseGlyphsNotLayoutCharacters() {
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_Space)), "␣")
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_Return)), "↩")
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_Escape)), "⎋")
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_LeftArrow)), "←")
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_F1)), "F1")
+        XCTAssertEqual(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_F12)), "F12")
+        XCTAssertNil(KeyCodeNames.nonPrintingSymbol(for: UInt32(kVK_ANSI_6)))
+    }
+
+    func testAnsiFallbackCoversLettersDigitsAndPunctuation() {
+        XCTAssertEqual(KeyCodeNames.ansiSymbol(for: UInt32(kVK_ANSI_6)), "6")
+        XCTAssertEqual(KeyCodeNames.ansiSymbol(for: UInt32(kVK_ANSI_C)), "C")
+        XCTAssertEqual(KeyCodeNames.ansiSymbol(for: UInt32(kVK_ANSI_Slash)), "/")
+        XCTAssertEqual(KeyCodeNames.ansiSymbol(for: UInt32(kVK_ANSI_Grave)), "`")
+        XCTAssertNil(KeyCodeNames.ansiSymbol(for: UInt32(kVK_Space)))
+    }
+
+    // Deterministic because the non-printing table is consulted before the
+    // keyboard layout — a layout-dependent assertion would fail on Dvorak.
+    func testDisplayStringPrefersGlyphTableOverLayout() {
+        XCTAssertEqual(KeyCodeNames.displayString(for: UInt32(kVK_Space)), "␣")
+        XCTAssertEqual(KeyCodeNames.displayString(for: UInt32(kVK_F5)), "F5")
+    }
+
+    func testDisplayStringDegradesLegiblyForUnknownKeyCodes() {
+        XCTAssertEqual(KeyCodeNames.displayString(for: 9999), "Key 9999")
+    }
+
+    func testMenuKeyEquivalentIsLowercaseBaseCharacter() {
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_ANSI_6)), "6")
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_ANSI_C)), "c")
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_Return)), "\r")
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_Tab)), "\t")
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_Space)), " ")
+    }
+
+    func testMenuKeyEquivalentUsesFunctionKeyUnicodeConstants() {
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_F1)), "\u{F704}")
+        XCTAssertEqual(KeyCodeNames.menuKeyEquivalent(for: UInt32(kVK_UpArrow)), "\u{F700}")
+    }
+}
