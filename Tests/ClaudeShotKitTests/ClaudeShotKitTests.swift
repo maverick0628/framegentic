@@ -228,3 +228,42 @@ final class HotKeyValidatorTests: XCTestCase {
                        .rejected(.missingRequiredModifier))
     }
 }
+
+final class HotKeyStoreTests: XCTestCase {
+    private var suiteName = ""
+    private var defaults = UserDefaults.standard
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "com.duncansmith.claudeshot.tests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName) ?? .standard
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    func testLoadReturnsDefaultWhenNothingStored() {
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+    }
+
+    func testSaveThenLoadRoundTrips() {
+        let store = HotKeyStore(defaults: defaults)
+        let config = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
+                                  carbonModifiers: UInt32(optionKey | shiftKey))
+        store.save(config)
+        XCTAssertEqual(store.load(), config)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), config)
+    }
+
+    func testLoadReturnsDefaultWhenStoredBlobIsCorrupt() {
+        defaults.set(Data("not json".utf8), forKey: HotKeyStore.defaultsKey)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+    }
+
+    func testLoadReturnsDefaultWhenStoredValueIsWrongType() {
+        defaults.set("⌘⇧6", forKey: HotKeyStore.defaultsKey)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+    }
+}
