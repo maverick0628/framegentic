@@ -9,25 +9,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let screenshot = ScreenshotService()
     private let automator = ClaudeAutomator()
     private let hotKey = HotKeyManager()
+    private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
+    private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
-    private var hotKeyRegistered = false
-    private let hotKeyStore = HotKeyStore()
-    private var hotKeyConfig = HotKeyConfig.default
-
-    private static let autoSendKey = "AutoSendAfterPaste"
-
-    private var autoSend: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.autoSendKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.autoSendKey) }
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
-        hotKeyConfig = hotKeyStore.load()
-        hotKeyRegistered = hotKey.register(hotKeyConfig)
+        model.registerStoredHotKey()
         screenshot.prewarm()
-        Log.app.info("ClaudeShot launched, hotkey registered: \(self.hotKeyRegistered)")
+        Log.app.info("ClaudeShot launched, hotkey registered: \(self.model.hotKeyRegistered)")
     }
 
     // MARK: - Status bar
@@ -57,17 +48,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let config = hotKeyConfig
+        let config = model.hotKeyConfig
         let capture = NSMenuItem(
             title: "Screenshot → Claude",
             action: #selector(captureFromMenu),
-            keyEquivalent: config.menuKeyEquivalent
+            keyEquivalent: model.isRecording ? "" : config.menuKeyEquivalent
         )
-        capture.keyEquivalentModifierMask = config.menuModifiers
+        if !model.isRecording {
+            capture.keyEquivalentModifierMask = config.menuModifiers
+        }
         capture.target = self
         menu.addItem(capture)
+        captureMenuItem = capture
 
-        if !hotKeyRegistered {
+        if !model.hotKeyRegistered {
             let warning = NSMenuItem(
                 title: "Hotkey unavailable — is \(config.displayString) taken?",
                 action: nil,
@@ -85,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         )
         send.target = self
-        send.state = autoSend ? .on : .off
+        send.state = model.autoSend ? .on : .off
         menu.addItem(send)
 
         let login = NSMenuItem(
@@ -94,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         )
         login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.state = model.startAtLogin ? .on : .off
         menu.addItem(login)
 
         var permissionItems: [NSMenuItem] = []
@@ -145,7 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await automator.deliver(autoSend: autoSend, clipboardChangeCount: changeCount)
+                try await automator.deliver(autoSend: model.autoSend,
+                                           clipboardChangeCount: changeCount)
             } catch {
                 report(error)
             }
@@ -184,19 +179,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Menu actions
 
     @objc private func toggleAutoSend() {
-        autoSend.toggle()
+        model.autoSend.toggle()
     }
 
     @objc private func toggleLoginItem() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            Log.app.error("Login item toggle failed: \(error.localizedDescription, privacy: .public)")
-        }
+        model.setStartAtLogin(!model.startAtLogin)
     }
 
     @objc private func openScreenRecordingSettings() {
