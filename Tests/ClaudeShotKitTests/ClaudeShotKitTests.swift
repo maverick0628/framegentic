@@ -202,19 +202,48 @@ final class HotKeyValidatorTests: XCTestCase {
                        .rejected(.missingRequiredModifier))
     }
 
-    func testRejectsReservedCombosWithTheirOwner() {
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Space, cmdKey)),
-                       .rejected(.reserved(owner: "Spotlight")))
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Tab, cmdKey)),
-                       .rejected(.reserved(owner: "the app switcher")))
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_Q, cmdKey)),
-                       .rejected(.reserved(owner: "Quit")))
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_4, cmdKey | shiftKey)),
-                       .rejected(.reserved(owner: "Screenshot")))
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_UpArrow, controlKey)),
-                       .rejected(.reserved(owner: "Mission Control")))
-        XCTAssertEqual(HotKeyValidator.validate(config(kVK_Escape, optionKey | cmdKey)),
-                       .rejected(.reserved(owner: "Force Quit")))
+    // Pins the whole table, not a sample of it: four rows were once deleted with
+    // every test still green. Removing, retyping or re-owning any row fails here.
+    func testEveryReservedComboIsRejectedWithItsOwner() {
+        let expected: [(keyCode: Int, modifiers: Int, owner: String)] = [
+            (kVK_Space, cmdKey, "Spotlight"),
+            (kVK_Space, optionKey | cmdKey, "Finder search"),
+            (kVK_Space, controlKey | cmdKey, "Emoji & Symbols"),
+            (kVK_Space, controlKey, "input source switching"),
+            (kVK_Tab, cmdKey, "the app switcher"),
+            (kVK_Tab, cmdKey | shiftKey, "the app switcher"),
+            (kVK_ANSI_Q, cmdKey, "Quit"),
+            (kVK_ANSI_W, cmdKey, "Close Window"),
+            (kVK_ANSI_H, cmdKey, "Hide"),
+            (kVK_ANSI_M, cmdKey, "Minimise"),
+            (kVK_ANSI_Comma, cmdKey, "Settings"),
+            (kVK_ANSI_3, cmdKey | shiftKey, "Screenshot"),
+            (kVK_ANSI_4, cmdKey | shiftKey, "Screenshot"),
+            (kVK_ANSI_5, cmdKey | shiftKey, "Screenshot"),
+            (kVK_UpArrow, controlKey, "Mission Control"),
+            (kVK_DownArrow, controlKey, "Mission Control"),
+            (kVK_LeftArrow, controlKey, "Spaces"),
+            (kVK_RightArrow, controlKey, "Spaces"),
+            (kVK_Escape, optionKey | cmdKey, "Force Quit"),
+            (kVK_ANSI_Q, controlKey | cmdKey, "Lock Screen")
+        ]
+
+        for row in expected {
+            let candidate = config(row.keyCode, row.modifiers)
+            XCTAssertEqual(HotKeyValidator.validate(candidate),
+                           .rejected(.reserved(owner: row.owner)),
+                           "\(candidate.displayString) should be reserved for \(row.owner)")
+        }
+
+        XCTAssertEqual(HotKeyValidator.reserved.count, expected.count,
+                       "a reserved row was added without being pinned here")
+    }
+
+    // ⌘, is this app's own Settings… equivalent. RegisterEventHotKey would take it
+    // globally, so Preferences would stop opening in every other app on the Mac.
+    func testRejectsTheSettingsMenuEquivalent() {
+        XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_Comma, cmdKey)),
+                       .rejected(.reserved(owner: "Settings")))
     }
 
     // Reserved entries match on the exact modifier set, so a near miss is fine.

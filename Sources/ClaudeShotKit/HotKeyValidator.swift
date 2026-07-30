@@ -11,7 +11,9 @@ public enum HotKeyValidation: Equatable, Sendable {
 }
 
 public enum HotKeyValidator {
-    private struct Reserved {
+    // Internal rather than private so the test suite can pin the table's size,
+    // and assert every row is reachable past the baseline modifier rule.
+    struct Reserved {
         let keyCode: UInt32
         let carbonModifiers: UInt32
         let owner: String
@@ -25,7 +27,7 @@ public enum HotKeyValidator {
     /// A courtesy in front of RegisterEventHotKey, which reports failure without
     /// a reason. Deliberately does not list ⌘⇧6: it is only taken on Touch Bar
     /// Macs, and it is this app's own default — registration reports it there.
-    private static let reserved: [Reserved] = [
+    static let reserved: [Reserved] = [
         Reserved(keyCode: UInt32(kVK_Space), carbonModifiers: cmd, owner: "Spotlight"),
         Reserved(keyCode: UInt32(kVK_Space), carbonModifiers: opt | cmd, owner: "Finder search"),
         Reserved(keyCode: UInt32(kVK_Space), carbonModifiers: ctrl | cmd, owner: "Emoji & Symbols"),
@@ -36,6 +38,7 @@ public enum HotKeyValidator {
         Reserved(keyCode: UInt32(kVK_ANSI_W), carbonModifiers: cmd, owner: "Close Window"),
         Reserved(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: cmd, owner: "Hide"),
         Reserved(keyCode: UInt32(kVK_ANSI_M), carbonModifiers: cmd, owner: "Minimise"),
+        Reserved(keyCode: UInt32(kVK_ANSI_Comma), carbonModifiers: cmd, owner: "Settings"),
         Reserved(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: cmd | shift, owner: "Screenshot"),
         Reserved(keyCode: UInt32(kVK_ANSI_4), carbonModifiers: cmd | shift, owner: "Screenshot"),
         Reserved(keyCode: UInt32(kVK_ANSI_5), carbonModifiers: cmd | shift, owner: "Screenshot"),

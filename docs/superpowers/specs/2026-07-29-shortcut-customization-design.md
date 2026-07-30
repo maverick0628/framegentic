@@ -113,14 +113,16 @@ modifier at all) would fire while typing, so those are rejected with
 | ⌃Space | Input source switching |
 | ⌘Tab, ⌘⇧Tab | App switcher |
 | ⌘Q, ⌘W, ⌘H, ⌘M | Quit, Close window, Hide, Minimise |
+| ⌘, | Settings |
 | ⌘⇧3, ⌘⇧4, ⌘⇧5 | Screenshot |
 | ⌃↑, ⌃↓, ⌃←, ⌃→ | Mission Control and Spaces |
 | ⌥⌘Esc | Force Quit |
 | ⌃⌘Q | Lock Screen |
 
-The ⌘Q/W/H/M entries are app-level menu equivalents rather than global hotkeys, so
-`RegisterEventHotKey` would happily accept them. They are blocked anyway — a global ⌘Q
-that screenshots instead of quitting is a trap.
+The ⌘Q/W/H/M and ⌘, entries are app-level menu equivalents rather than global hotkeys,
+so `RegisterEventHotKey` would happily accept them. They are blocked anyway — a global ⌘Q
+that screenshots instead of quitting is a trap, and ⌘, is this app's own Settings…
+equivalent, so taking it globally would stop Preferences opening everywhere else.
 
 **⌘⇧6 is deliberately absent from the list.** It is the Touch Bar screenshot shortcut,
 but only on Touch Bar Macs, and it is this app's own default. A validator that rejects
