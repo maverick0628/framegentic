@@ -43,7 +43,7 @@ Resolves a Carbon virtual keycode to something displayable. Three lookups in a f
   - `KeyCodeNames.displayString(for keyCode: UInt32) -> String`
   - `KeyCodeNames.menuKeyEquivalent(for keyCode: UInt32) -> String`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift`:
 
@@ -93,12 +93,12 @@ final class KeyCodeNamesTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter KeyCodeNamesTests`
 Expected: FAIL — compile error, `cannot find 'KeyCodeNames' in scope`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `Sources/ClaudeShotKit/KeyCodeNames.swift`:
 
@@ -276,12 +276,12 @@ public enum KeyCodeNames {
 
 This exact file was compiled under `-swift-version 6` and run against the assertions above before this plan was written: all pass, no warnings.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter KeyCodeNamesTests`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/ClaudeShotKit/KeyCodeNames.swift Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift
@@ -314,7 +314,7 @@ Turns the hardcoded singleton into an initialisable, `Codable` value with derive
     live modifier preview in Task 7 needs it)
   - conformances: `Sendable`, `Equatable`, `Codable`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace the existing `HotKeyConfigTests` class in `Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift` with:
 
@@ -369,12 +369,12 @@ final class HotKeyConfigTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter HotKeyConfigTests`
 Expected: FAIL — compile error, no `init(keyCode:carbonModifiers:)` and no member `default`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace the entire contents of `Sources/ClaudeShotKit/HotKeyConfig.swift`:
 
@@ -437,7 +437,7 @@ public struct HotKeyConfig: Sendable, Equatable, Codable {
 }
 ```
 
-- [ ] **Step 4: Fix the two broken call sites**
+- [x] **Step 4: Fix the two broken call sites**
 
 In `Sources/ClaudeShot/HotKeyManager.swift`, change:
 
@@ -463,12 +463,12 @@ to:
         let config = HotKeyConfig.default
 ```
 
-- [ ] **Step 5: Run the full suite and build**
+- [x] **Step 5: Run the full suite and build**
 
 Run: `swift test && swift build -c release`
 Expected: PASS, all tests green, release build succeeds with no warnings.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/ClaudeShotKit/HotKeyConfig.swift Sources/ClaudeShot/HotKeyManager.swift Sources/ClaudeShot/AppDelegate.swift Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift
@@ -500,7 +500,7 @@ Rejects combos before they reach Carbon. Two rules: a baseline modifier requirem
   - `enum HotKeyValidation: Equatable, Sendable { case valid, rejected(HotKeyRejection) }`
   - `HotKeyValidator.validate(_ config: HotKeyConfig) -> HotKeyValidation`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift`:
 
@@ -559,12 +559,12 @@ final class HotKeyValidatorTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter HotKeyValidatorTests`
 Expected: FAIL — compile error, `cannot find 'HotKeyValidator' in scope`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `Sources/ClaudeShotKit/HotKeyValidator.swift`:
 
@@ -633,12 +633,12 @@ public enum HotKeyValidator {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter HotKeyValidatorTests`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/ClaudeShotKit/HotKeyValidator.swift Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift
@@ -665,7 +665,7 @@ Persists the shortcut as a JSON blob under one `UserDefaults` key. Falls back to
   - `load() -> HotKeyConfig`
   - `save(_ config: HotKeyConfig)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift`:
 
@@ -710,12 +710,12 @@ final class HotKeyStoreTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter HotKeyStoreTests`
 Expected: FAIL — compile error, `cannot find 'HotKeyStore' in scope`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `Sources/ClaudeShotKit/HotKeyStore.swift`:
 
@@ -747,12 +747,12 @@ public struct HotKeyStore {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter HotKeyStoreTests`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/ClaudeShotKit/HotKeyStore.swift Tests/ClaudeShotKitTests/ClaudeShotKitTests.swift
@@ -779,7 +779,7 @@ After this task the stored shortcut is honoured at launch, which is manually tes
   - `HotKeyManager.register(_ config: HotKeyConfig) -> Bool`
   - `HotKeyManager.unregister()`
 
-- [ ] **Step 1: Rewrite `HotKeyManager`**
+- [x] **Step 1: Rewrite `HotKeyManager`**
 
 Replace the entire contents of `Sources/ClaudeShot/HotKeyManager.swift`:
 
@@ -871,7 +871,7 @@ final class HotKeyManager {
 }
 ```
 
-- [ ] **Step 2: Load the stored shortcut in `AppDelegate`**
+- [x] **Step 2: Load the stored shortcut in `AppDelegate`**
 
 In `Sources/ClaudeShot/AppDelegate.swift`, add a stored property next to the existing ones:
 
@@ -919,7 +919,7 @@ with:
             )
 ```
 
-- [ ] **Step 3: Build and verify the stored shortcut is honoured**
+- [x] **Step 3: Build and verify the stored shortcut is honoured**
 
 ```bash
 swift test && bash scripts/build.sh
@@ -939,7 +939,7 @@ Then `open .build/ClaudeShot.app`, open the menu bar item, and confirm the captu
 defaults delete com.duncansmith.claudeshot CaptureHotKey
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Sources/ClaudeShot/HotKeyManager.swift Sources/ClaudeShot/AppDelegate.swift
@@ -981,7 +981,7 @@ Centralises the three settings so the menu bar and the settings window read and 
   - `func refreshStartAtLogin()`
   - `func setStartAtLogin(_ enabled: Bool)`
 
-- [ ] **Step 1: Write the model**
+- [x] **Step 1: Write the model**
 
 Create `Sources/ClaudeShot/SettingsModel.swift`:
 
@@ -1087,7 +1087,7 @@ final class SettingsModel {
 }
 ```
 
-- [ ] **Step 2: Route `AppDelegate` through the model**
+- [x] **Step 2: Route `AppDelegate` through the model**
 
 In `Sources/ClaudeShot/AppDelegate.swift`, delete these members entirely: the `autoSendKey` static, the `autoSend` computed property, `hotKeyRegistered`, `hotKeyConfig`, `hotKeyStore`, and the `toggleLoginItem` body's `SMAppService` calls.
 
@@ -1171,7 +1171,7 @@ Replace the `autoSend` reference inside `screenshotToClaude`:
                                            clipboardChangeCount: changeCount)
 ```
 
-- [ ] **Step 3: Build and verify no behaviour changed**
+- [x] **Step 3: Build and verify no behaviour changed**
 
 ```bash
 swift test && bash scripts/build.sh
@@ -1181,7 +1181,7 @@ Expected: tests pass, bundle builds with no warnings.
 
 Then `open .build/ClaudeShot.app` and confirm from the menu bar that Send Automatically After Paste and Start at Login still toggle and still persist across a quit and relaunch. Nothing user-visible should have changed in this task.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Sources/ClaudeShot/SettingsModel.swift Sources/ClaudeShot/AppDelegate.swift
@@ -1210,7 +1210,7 @@ Recording commits on the first non-modifier key-down. Escape with no modifiers c
   - `final class ShortcutRecorderView: NSView` with `onRecord: ((HotKeyConfig) -> Void)?`, `onBeginRecording: (() -> Void)?`, `onEndRecording: (() -> Void)?`, `var idleTitle: String`
   - `struct ShortcutRecorderField: NSViewRepresentable` with `idleTitle: String`, `onRecord: (HotKeyConfig) -> Void`, `onBeginRecording: () -> Void`, `onEndRecording: () -> Void`
 
-- [ ] **Step 1: Write the view**
+- [x] **Step 1: Write the view**
 
 Create `Sources/ClaudeShot/ShortcutRecorderField.swift`:
 
@@ -1358,12 +1358,12 @@ struct ShortcutRecorderField: NSViewRepresentable {
 }
 ```
 
-- [ ] **Step 2: Build**
+- [x] **Step 2: Build**
 
 Run: `swift build -c release`
 Expected: succeeds with no warnings. The view has no call site yet, so there is nothing to run.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Sources/ClaudeShot/ShortcutRecorderField.swift
@@ -1396,7 +1396,7 @@ Two details that matter. The app is `LSUIElement`, so `NSApp.activate()` is requ
   - `final class SettingsWindowController` with `init(model: SettingsModel)` and `func show()`
   - `SettingsModel.onRecordingStateChange: ((Bool) -> Void)?`
 
-- [ ] **Step 1: Let the model announce recording state**
+- [x] **Step 1: Let the model announce recording state**
 
 In `Sources/ClaudeShot/SettingsModel.swift`, add the property:
 
@@ -1421,7 +1421,7 @@ and set it from both recording transitions:
     }
 ```
 
-- [ ] **Step 2: Write the SwiftUI view**
+- [x] **Step 2: Write the SwiftUI view**
 
 Create `Sources/ClaudeShot/SettingsView.swift`:
 
@@ -1483,7 +1483,7 @@ struct SettingsView: View {
 }
 ```
 
-- [ ] **Step 3: Write the window controller**
+- [x] **Step 3: Write the window controller**
 
 Create `Sources/ClaudeShot/SettingsWindowController.swift`:
 
@@ -1525,7 +1525,7 @@ final class SettingsWindowController {
 }
 ```
 
-- [ ] **Step 4: Wire it into `AppDelegate`**
+- [x] **Step 4: Wire it into `AppDelegate`**
 
 Add the stored property:
 
@@ -1580,7 +1580,7 @@ Add the action alongside the other `@objc` methods:
 
 Rename the existing private `openSettings(pane:)` helper to `openPrivacySettings(pane:)` to avoid colliding with the new selector, and update its three call sites in `report(_:)`, `openScreenRecordingSettings()` and `openAccessibilitySettings()`.
 
-- [ ] **Step 5: Build and test end to end**
+- [x] **Step 5: Build and test end to end**
 
 ```bash
 swift test && bash scripts/build.sh && rm -rf /Applications/ClaudeShot.app && cp -R .build/ClaudeShot.app /Applications/ && open /Applications/ClaudeShot.app
@@ -1599,7 +1599,7 @@ Verify by hand:
 9. Toggle Send automatically in the window, then open the menu bar — the checkmark matches. Toggle it in the menu, reopen the window — the switch matches.
 10. Quit and relaunch. The recorded shortcut survives.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Sources/ClaudeShot/SettingsView.swift Sources/ClaudeShot/SettingsWindowController.swift Sources/ClaudeShot/SettingsModel.swift Sources/ClaudeShot/AppDelegate.swift
@@ -1616,7 +1616,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Modify: `README.md`
 - Modify: `DECISIONS.md`
 
-- [ ] **Step 1: Update the README**
+- [x] **Step 1: Update the README**
 
 In the "How it works" section, replace the opening sentence:
 
@@ -1667,7 +1667,7 @@ Sources/ClaudeShotKit/    Pure decision logic (display selection, capture geomet
                           and persistence) — unit tested
 ```
 
-- [ ] **Step 2: Log the shipped state in DECISIONS.md**
+- [x] **Step 2: Log the shipped state in DECISIONS.md**
 
 Add at the top of `DECISIONS.md`, above the existing 2026-07-29 entries:
 
@@ -1679,7 +1679,7 @@ menu bar keeping its own toggles. Implemented per
 `docs/superpowers/specs/2026-07-29-shortcut-customization-design.md`.
 ```
 
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
 
 ```bash
 swift build -c release 2>&1 | tail -5 && swift test 2>&1 | tail -20 && bash scripts/build.sh 2>&1 | tail -5
@@ -1695,7 +1695,7 @@ swift test 2>&1 | grep -cE "KeyCodeNamesTests|HotKeyValidatorTests|HotKeyStoreTe
 
 Expected: a non-zero count.
 
-- [ ] **Step 4: Commit and open a PR**
+- [x] **Step 4: Commit and open a PR**
 
 ```bash
 git add README.md DECISIONS.md
@@ -1711,4 +1711,41 @@ Then open a PR against `master`, ready for review, describing the feature and no
 
 ## Completed
 
-_(Move finished task headings here as they land, per the project convention.)_
+All nine tasks executed 2026-07-29 via subagent-driven development, on branch
+`feat/shortcut-customization`. Every task passed a spec + quality review; Tasks 6
+and 7 each needed one fix round, and a final whole-branch review triggered a
+five-item fix wave. See `DECISIONS.md` for the rulings that came out of it.
+
+Shipped: `KeyCodeNames`, `HotKeyConfig` as a value type, `HotKeyValidator` (20
+reserved combos), `HotKeyStore` (validates on load), configurable
+`HotKeyManager`, `SettingsModel`, `ShortcutRecorderField`, `SettingsView` +
+`SettingsWindowController`, README and DECISIONS updates. 34 kit tests, all
+green, warning-free release build.
+
+## Outstanding — manual GUI verification
+
+Nothing below has been verified. The whole app-target layer is unit-test-free by
+design, so these are the only checks that can confirm the feature actually works.
+Run them against a build from `bash scripts/build.sh`.
+
+- [ ] Settings… opens the window and it takes keyboard focus
+- [ ] Clicking the recorder highlights it and shows "Type a shortcut…"
+- [ ] Holding ⌥⇧ shows a live ⌥⇧ preview
+- [ ] Recording ⌥⇧C updates the field, updates the menu item, and ⌥⇧C captures
+- [ ] ⌘Space is refused with "⌘Space belongs to Spotlight" and the old shortcut survives
+- [ ] A bare key is refused with the add-a-modifier message
+- [ ] Re-recording the *current* shortcut records it rather than firing a capture
+      (this is the Carbon-suspension path)
+- [ ] Escape while recording cancels and leaves the shortcut untouched
+- [ ] Reset to Default returns to ⇧⌘6 and greys itself out
+- [ ] Toggling Send-automatically in the window matches the menu, and vice versa
+- [ ] The recorded shortcut survives quit and relaunch
+- [ ] The menu renders a non-default configured shortcut (carried from Task 5)
+- [ ] A physical keypress of the configured shortcut fires a capture (carried from Task 5)
+- [ ] The Start-at-Login checkmark tracks a change made externally in System
+      Settings while the app runs (carried from Task 6)
+
+Two known behaviours that are correct, not bugs, if you hit them: ⌘, is now a
+reserved combo (it is the Settings item's own equivalent, and taking it globally
+would stop Preferences opening everywhere), and a stored shortcut that fails
+validation silently falls back to ⇧⌘6.
