@@ -21,6 +21,8 @@ final class SettingsModel {
         didSet { UserDefaults.standard.set(autoSend, forKey: Self.autoSendKey) }
     }
 
+    var onRecordingStateChange: ((Bool) -> Void)?
+
     init(store: HotKeyStore, hotKey: HotKeyManager) {
         self.store = store
         self.hotKey = hotKey
@@ -73,11 +75,13 @@ final class SettingsModel {
         isRecording = true
         shortcutError = nil
         hotKey.unregister()
+        onRecordingStateChange?(true)
     }
 
     func endRecording() {
         isRecording = false
         hotKeyRegistered = hotKey.register(hotKeyConfig)
+        onRecordingStateChange?(false)
     }
 
     func refreshStartAtLogin() {

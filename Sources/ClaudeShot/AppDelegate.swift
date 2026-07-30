@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let automator = ClaudeAutomator()
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
+    private lazy var settingsWindow = SettingsWindowController(model: model)
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
 
@@ -16,6 +17,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusBar()
         hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
         model.registerStoredHotKey()
+        model.onRecordingStateChange = { [weak self] isRecording in
+            self?.captureMenuItem?.keyEquivalent = isRecording
+                ? ""
+                : self?.model.hotKeyConfig.menuKeyEquivalent ?? ""
+        }
         screenshot.prewarm()
         Log.app.info("ClaudeShot launched, hotkey registered: \(self.model.hotKeyRegistered)")
     }
@@ -64,12 +70,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !model.hotKeyRegistered {
             let warning = NSMenuItem(
                 title: "Hotkey unavailable — is \(config.displayString) taken?",
-                action: nil,
+                action: #selector(openSettings),
                 keyEquivalent: ""
             )
-            warning.isEnabled = false
+            warning.target = self
             menu.addItem(warning)
         }
+
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settings.keyEquivalentModifierMask = [.command]
+        settings.target = self
+        menu.addItem(settings)
 
         menu.addItem(.separator())
 
@@ -168,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "Open System Settings")
             alert.addButton(withTitle: "Cancel")
             if alert.runModal() == .alertFirstButtonReturn {
-                openSettings(pane: settingsPane)
+                openPrivacySettings(pane: settingsPane)
             }
         } else {
             alert.addButton(withTitle: "OK")
@@ -187,14 +202,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openScreenRecordingSettings() {
-        openSettings(pane: "Privacy_ScreenCapture")
+        openPrivacySettings(pane: "Privacy_ScreenCapture")
     }
 
     @objc private func openAccessibilitySettings() {
-        openSettings(pane: "Privacy_Accessibility")
+        openPrivacySettings(pane: "Privacy_Accessibility")
     }
 
-    private func openSettings(pane: String) {
+    @objc private func openSettings() {
+        settingsWindow.show()
+    }
+
+    private func openPrivacySettings(pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else {
             return
         }
