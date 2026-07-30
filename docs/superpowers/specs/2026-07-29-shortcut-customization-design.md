@@ -158,7 +158,10 @@ public struct HotKeyStore {
 ```
 
 JSON blob under a single key. `load()` returns `HotKeyConfig.default` when the key is
-unset **or** when decoding fails. `defaults` is injectable so tests use a scratch suite.
+unset, when decoding fails, **or** when the decoded config fails `HotKeyValidator` — a
+foreign `defaults write` of `{"keyCode":0,"carbonModifiers":0}` must not reach
+`RegisterEventHotKey` and turn every "a" into a capture. `defaults` is injectable so
+tests use a scratch suite.
 
 No migration path is needed: existing installs have nothing stored, so they load the
 default and stay on ⌘⇧6 exactly where they are today.

@@ -314,4 +314,29 @@ final class HotKeyStoreTests: XCTestCase {
         defaults.set("⌘⇧6", forKey: HotKeyStore.defaultsKey)
         XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
     }
+
+    // A hostile `defaults write` is well-formed JSON that the app's own UI would
+    // never produce. Without a validation pass, a bare key registers globally and
+    // every "a" typed anywhere fires a capture.
+    func testLoadReturnsDefaultWhenStoredShortcutHasNoRequiredModifier() throws {
+        try store(HotKeyConfig(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: 0))
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+    }
+
+    func testLoadReturnsDefaultWhenStoredShortcutIsReserved() throws {
+        try store(HotKeyConfig(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)))
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+    }
+
+    func testLoadStillReturnsAValidStoredShortcut() throws {
+        let valid = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
+                                 carbonModifiers: UInt32(optionKey | shiftKey))
+        try store(valid)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), valid)
+    }
+
+    /// Writes past `save()` on purpose: the threat is a blob the app never wrote.
+    private func store(_ config: HotKeyConfig) throws {
+        defaults.set(try JSONEncoder().encode(config), forKey: HotKeyStore.defaultsKey)
+    }
 }
