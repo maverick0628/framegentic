@@ -1,6 +1,5 @@
 import AppKit
 import ApplicationServices
-import ServiceManagement
 import ClaudeShotKit
 
 @MainActor
@@ -9,22 +8,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let screenshot = ScreenshotService()
     private let automator = ClaudeAutomator()
     private let hotKey = HotKeyManager()
+    private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
+    private lazy var settingsWindow = SettingsWindowController(model: model)
+    private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
-    private var hotKeyRegistered = false
-
-    private static let autoSendKey = "AutoSendAfterPaste"
-
-    private var autoSend: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.autoSendKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.autoSendKey) }
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
-        hotKeyRegistered = hotKey.register()
+        model.registerStoredHotKey()
+        model.onRecordingStateChange = { [weak self] isRecording in
+            self?.captureMenuItem?.keyEquivalent = isRecording
+                ? ""
+                : self?.model.hotKeyConfig.menuKeyEquivalent ?? ""
+        }
         screenshot.prewarm()
-        Log.app.info("ClaudeShot launched, hotkey registered: \(self.hotKeyRegistered)")
+        Log.app.info("ClaudeShot launched, hotkey registered: \(self.model.hotKeyRegistered)")
     }
 
     // MARK: - Status bar
@@ -53,26 +52,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        model.refreshStartAtLogin()
 
-        let config = HotKeyConfig.standard
+        let config = model.hotKeyConfig
         let capture = NSMenuItem(
             title: "Screenshot → Claude",
             action: #selector(captureFromMenu),
-            keyEquivalent: config.menuKeyEquivalent
+            keyEquivalent: model.isRecording ? "" : config.menuKeyEquivalent
         )
-        capture.keyEquivalentModifierMask = config.menuModifiers
+        if !model.isRecording {
+            capture.keyEquivalentModifierMask = config.menuModifiers
+        }
         capture.target = self
         menu.addItem(capture)
+        captureMenuItem = capture
 
-        if !hotKeyRegistered {
+        if !model.hotKeyRegistered {
             let warning = NSMenuItem(
-                title: "Hotkey unavailable — is ⌘⇧6 taken by macOS?",
-                action: nil,
+                title: "Hotkey unavailable — is \(config.displayString) taken?",
+                action: #selector(openSettings),
                 keyEquivalent: ""
             )
-            warning.isEnabled = false
+            warning.target = self
             menu.addItem(warning)
         }
+
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settings.keyEquivalentModifierMask = [.command]
+        settings.target = self
+        menu.addItem(settings)
 
         menu.addItem(.separator())
 
@@ -82,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         )
         send.target = self
-        send.state = autoSend ? .on : .off
+        send.state = model.autoSend ? .on : .off
         menu.addItem(send)
 
         let login = NSMenuItem(
@@ -91,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         )
         login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.state = model.startAtLogin ? .on : .off
         menu.addItem(login)
 
         var permissionItems: [NSMenuItem] = []
@@ -142,7 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await automator.deliver(autoSend: autoSend, clipboardChangeCount: changeCount)
+                try await automator.deliver(autoSend: model.autoSend,
+                                           clipboardChangeCount: changeCount)
             } catch {
                 report(error)
             }
@@ -170,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "Open System Settings")
             alert.addButton(withTitle: "Cancel")
             if alert.runModal() == .alertFirstButtonReturn {
-                openSettings(pane: settingsPane)
+                openPrivacySettings(pane: settingsPane)
             }
         } else {
             alert.addButton(withTitle: "OK")
@@ -181,30 +194,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Menu actions
 
     @objc private func toggleAutoSend() {
-        autoSend.toggle()
+        model.autoSend.toggle()
     }
 
     @objc private func toggleLoginItem() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            Log.app.error("Login item toggle failed: \(error.localizedDescription, privacy: .public)")
-        }
+        model.setStartAtLogin(!model.startAtLogin)
     }
 
     @objc private func openScreenRecordingSettings() {
-        openSettings(pane: "Privacy_ScreenCapture")
+        openPrivacySettings(pane: "Privacy_ScreenCapture")
     }
 
     @objc private func openAccessibilitySettings() {
-        openSettings(pane: "Privacy_Accessibility")
+        openPrivacySettings(pane: "Privacy_Accessibility")
     }
 
-    private func openSettings(pane: String) {
+    @objc private func openSettings() {
+        settingsWindow.show()
+    }
+
+    private func openPrivacySettings(pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else {
             return
         }
