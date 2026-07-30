@@ -11,7 +11,7 @@ final class SettingsWindowController {
     }
 
     func show() {
-        model.refreshStartAtLogin()
+        model.windowWillShow()
 
         if let window {
             // LSUIElement apps do not get focus from ordering a window front alone,

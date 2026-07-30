@@ -84,6 +84,15 @@ final class SettingsModel {
         onRecordingStateChange?(false)
     }
 
+    /// The window is reused across openings, so a rejection from an earlier session
+    /// would otherwise still sit in red under a shortcut that works. Safe here and
+    /// not on close: apply() runs while the window is already open, so the user has
+    /// seen nothing yet at this point.
+    func windowWillShow() {
+        shortcutError = nil
+        refreshStartAtLogin()
+    }
+
     func refreshStartAtLogin() {
         startAtLogin = SMAppService.mainApp.status == .enabled
     }
