@@ -1,6 +1,5 @@
 import AppKit
 import ApplicationServices
-import ServiceManagement
 import ClaudeShotKit
 
 @MainActor
@@ -47,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        model.refreshStartAtLogin()
 
         let config = model.hotKeyConfig
         let capture = NSMenuItem(
