@@ -60,6 +60,39 @@ final class ShortcutRecorderView: NSView {
         return super.resignFirstResponder()
     }
 
+    private var windowResignObserver: NSObjectProtocol?
+
+    // resignFirstResponder only fires when first responder changes within this
+    // window (e.g. clicking another control). Cmd-Tabbing away, clicking a
+    // different app's window, or hiding this window resigns key status on the
+    // whole window without ever touching first responder, so recording would
+    // otherwise get stuck on with no way to exit it.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        if let windowResignObserver {
+            NotificationCenter.default.removeObserver(windowResignObserver)
+            self.windowResignObserver = nil
+        }
+
+        guard let window else { return }
+
+        windowResignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            // The queue: .main above guarantees this runs on the main thread,
+            // but the compiler has no static way to know that, so it can't
+            // verify this @Sendable closure's access to MainActor-isolated
+            // self is safe. assumeIsolated documents and enforces that
+            // guarantee rather than silencing a real race.
+            MainActor.assumeIsolated {
+                self?.stopRecording()
+            }
+        }
+    }
+
     private func startRecording() {
         guard !isRecording else { return }
         previewGlyphs = ""
