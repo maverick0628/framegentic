@@ -1,5 +1,29 @@
 # Decisions
 
+## 2026-07-29 — Validate the stored shortcut in `HotKeyStore.load()`, not at registration
+
+A foreign `defaults write` of a bare key would otherwise register globally and turn every
+"a" into a capture. The check goes in the store because that is where the untrusted
+boundary is, because `load()` already promises a working hotkey out of a corrupt blob, and
+because `SettingsModel` sits in the untested app target where the fallback could not be
+tested. Cost: `HotKeyStore` now depends on `HotKeyValidator` — same module, no cycle.
+
+## 2026-07-29 — ⌘, joins the reserved-combo blocklist
+
+⌘, is the app's own Settings… menu equivalent, and `RegisterEventHotKey` would take it
+globally, so Preferences would stop opening in every other app. Same trap as the existing
+⌘Q/W/H/M rows. Supersedes the ~18-row count in the entry below: the table is now 20 rows.
+
+## 2026-07-29 — Two tests renamed to stop claiming unobservable invariants
+
+Mutation testing showed that reversing the rule order in `validate`, and the lookup order
+in `displayString`, changed no test result — both are equivalent mutants, because no
+reserved row lacks ⌘/⌃/⌥ and `layoutCharacter`'s guard nils out every key in the glyph
+table. The tests now pin the preconditions that make those orderings harmless, and say so
+in comments, rather than asserting an ordering they cannot detect. `Reserved`/`reserved`
+were relaxed from private to internal so the suite can pin the table's size and the
+reachability of every row.
+
 ## 2026-07-29 — Shortcut customization shipped
 
 Recorder, validator, `UserDefaults` persistence and a SwiftUI settings window, with the
