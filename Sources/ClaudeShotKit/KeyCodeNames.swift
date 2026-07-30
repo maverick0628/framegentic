@@ -3,8 +3,10 @@ import Foundation
 
 public enum KeyCodeNames {
     /// UCKeyTranslate maps Space to " " and the function keys to unprintable
-    /// control characters, both of which survive a length check and render as
-    /// nothing. This table must be consulted before the keyboard layout.
+    /// control characters, both of which would render as nothing. What keeps them
+    /// out of the UI is layoutCharacter's own whitespace/control guard, which
+    /// already returns nil for every key in here; consulting this table first is
+    /// the cheaper path and a second line of defence, not the only one.
     private static let nonPrinting: [UInt32: String] = [
         UInt32(kVK_Return): "↩",
         UInt32(kVK_ANSI_KeypadEnter): "⌤",

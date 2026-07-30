@@ -151,11 +151,19 @@ final class KeyCodeNamesTests: XCTestCase {
         XCTAssertNil(KeyCodeNames.ansiSymbol(for: UInt32(kVK_Space)))
     }
 
-    // Deterministic because the non-printing table is consulted before the
-    // keyboard layout — a layout-dependent assertion would fail on Dvorak.
-    func testDisplayStringPrefersGlyphTableOverLayout() {
-        XCTAssertEqual(KeyCodeNames.displayString(for: UInt32(kVK_Space)), "␣")
-        XCTAssertEqual(KeyCodeNames.displayString(for: UInt32(kVK_F5)), "F5")
+    // Whether the glyph table or the layout is consulted first is unobservable:
+    // layoutCharacter's whitespace/control guard returns nil for every key in the
+    // glyph table, so the two can never disagree. The observable guarantee is that
+    // these keys render as a glyph rather than a blank under any live layout.
+    func testNonPrintingKeysRenderAsGlyphsNotBlanks() {
+        let expected: [(keyCode: Int, glyph: String)] = [
+            (kVK_Space, "␣"), (kVK_Return, "↩"), (kVK_Tab, "⇥"), (kVK_Delete, "⌫"),
+            (kVK_Escape, "⎋"), (kVK_LeftArrow, "←"), (kVK_UpArrow, "↑"),
+            (kVK_F5, "F5"), (kVK_F12, "F12")
+        ]
+        for key in expected {
+            XCTAssertEqual(KeyCodeNames.displayString(for: UInt32(key.keyCode)), key.glyph)
+        }
     }
 
     func testDisplayStringDegradesLegiblyForUnknownKeyCodes() {
@@ -252,7 +260,18 @@ final class HotKeyValidatorTests: XCTestCase {
         XCTAssertEqual(HotKeyValidator.validate(config(kVK_ANSI_Q, optionKey)), .valid)
     }
 
-    func testModifierRuleIsCheckedBeforeTheReservedTable() {
+    // Not an ordering test, though it used to claim to be: no reserved row carries
+    // fewer than one of ⌘/⌃/⌥, so no single input can trip both rules and the order
+    // validate() runs them in is unobservable from outside. What is worth pinning is
+    // the precondition that makes it unobservable — a row that failed the baseline
+    // rule could never be reached, and its owner string would be dead text.
+    func testEveryReservedRowClearsTheBaselineModifierRule() {
+        let required = UInt32(cmdKey | controlKey | optionKey)
+        for row in HotKeyValidator.reserved {
+            XCTAssertNotEqual(row.carbonModifiers & required, 0,
+                              "the \(row.owner) row is unreachable behind the modifier rule")
+        }
+
         XCTAssertEqual(HotKeyValidator.validate(config(kVK_Space, 0)),
                        .rejected(.missingRequiredModifier))
     }
