@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-07-29 — Shortcut customization shipped
+
+Recorder, validator, `UserDefaults` persistence and a SwiftUI settings window, with the
+menu bar keeping its own toggles. Implemented per
+`docs/superpowers/specs/2026-07-29-shortcut-customization-design.md`.
+
 ## 2026-07-29 — Keep Auto-send and Start-at-login in both the menu and Settings
 
 The settings window duplicates the two existing menu toggles rather than absorbing them.

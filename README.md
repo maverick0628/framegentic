@@ -4,7 +4,7 @@ A macOS menu bar app that captures your screen and drops it straight into the Cl
 
 ## How it works
 
-Press `⌘⇧6` (or pick **Screenshot → Claude** from the menu bar). ClaudeShot:
+Press `⇧⌘6` (or pick **Screenshot → Claude** from the menu bar). ClaudeShot:
 
 1. Captures your main display with ScreenCaptureKit at its native scale.
 2. Writes the image to the clipboard as PNG, marked concealed so clipboard managers and Handoff skip it.
@@ -12,6 +12,19 @@ Press `⌘⇧6` (or pick **Screenshot → Claude** from the menu bar). ClaudeSho
 4. Pastes with a simulated `⌘V` — only after verifying Claude has focus. If anything else grabbed focus, it aborts and tells you.
 
 Sending is manual by default: review the screenshot, press Return yourself. Turn on **Send Automatically After Paste** in the menu if you want the old one-keystroke flow. The clipboard is cleared a few seconds after delivery so the screenshot doesn't linger.
+
+## Changing the shortcut
+
+Open **Settings…** from the menu bar, click the shortcut field and press the combo you
+want. It takes effect immediately and survives a relaunch.
+
+A shortcut needs at least one of ⌘, ⌃ or ⌥ — Shift alone would fire while you type.
+ClaudeShot also refuses a short list of combos macOS owns, naming the owner when it
+does, and refuses anything the system will not hand over. Nothing is saved unless it
+registers, so you cannot end up with a shortcut that silently does nothing.
+
+**Reset to Default** goes back to ⇧⌘6. On a Touch Bar Mac that combo belongs to the
+system screenshot shortcut, so the reset will be refused there — pick something else.
 
 It runs as a background accessory (`LSUIElement`), so there's no Dock icon, just a menu bar item.
 
@@ -56,7 +69,7 @@ There's no App Store version and there won't be: simulated keystrokes can't live
 
 ## Troubleshooting
 
-**Hotkey does nothing** — Screen Recording isn't granted, or `⌘⇧6` is taken (on Touch Bar Macs it's the system's Touch Bar screenshot shortcut — the menu will say so). The menu item works regardless.
+**Hotkey does nothing** — Screen Recording isn't granted, or the shortcut is taken by something else (on Touch Bar Macs the default `⇧⌘6` is the system's Touch Bar screenshot shortcut). The menu says so and the warning opens Settings, where you can pick another. The menu item works regardless.
 
 **Screenshot lands on the clipboard but never pastes** — Accessibility isn't granted. Grant it, quit and relaunch.
 
@@ -80,7 +93,8 @@ The `tccutil` calls remove the permission grants. Skip them if you plan to reins
 
 ```
 Sources/ClaudeShotKit/    Pure decision logic (display selection, capture geometry,
-                          Claude resolution, paste guard, hotkey config) — unit tested
+                          Claude resolution, paste guard, hotkey config, validation
+                          and persistence) — unit tested
 Sources/ClaudeShot/       AppKit glue: menu bar, capture, activation, keystrokes
 Tests/ClaudeShotKitTests/ The kit's test suite
 Resources/                Info.plist, app and menu bar icons
