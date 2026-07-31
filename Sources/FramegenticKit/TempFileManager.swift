@@ -10,49 +10,70 @@ import Foundation
 // that to the main actor would contend with this menu bar app's UI, so a
 // plain actor plus a Task (instead of a background-queue timer) for the
 // delay removes the race without pinning the work to any particular thread.
+//
+// Files are grouped into batches under the session directory, one per
+// scheduleCleanup, because each batch's deadline is a promise made to the
+// user about that batch. See scheduleCleanup.
 public actor TempFileManager {
-    private let baseDir: URL
-    private let sessionID: UUID
-    private var sessionDir: URL
-    private var cleanupTask: Task<Void, Never>?
+    private let sessionDir: URL
+    private var batchDir: URL
     private var writtenURLs: [URL] = []
+    private var cleanupTasks: [URL: Task<Void, Never>] = [:]
 
     public init() {
-        self.baseDir = FileManager.default.temporaryDirectory.appendingPathComponent("framesnap")
-        self.sessionID = UUID()
-        self.sessionDir = baseDir.appendingPathComponent(sessionID.uuidString)
+        let sessionDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("framesnap")
+            .appendingPathComponent(UUID().uuidString)
+        self.sessionDir = sessionDir
+        self.batchDir = sessionDir.appendingPathComponent(UUID().uuidString)
     }
 
     public func write(_ data: Data, filename: String) throws -> URL {
-        try FileManager.default.createDirectory(at: sessionDir, withIntermediateDirectories: true)
-        let fileURL = sessionDir.appendingPathComponent(filename)
+        try FileManager.default.createDirectory(at: batchDir, withIntermediateDirectories: true)
+        let fileURL = batchDir.appendingPathComponent(filename)
         try data.write(to: fileURL)
         writtenURLs.append(fileURL)
         return fileURL
     }
 
+    /// Gives everything written since the last call its own deletion deadline,
+    /// then opens a fresh directory for whatever gets written next.
+    ///
+    /// Per batch, not per manager. A clip is told on screen when it will be
+    /// deleted, and capturing a second clip a minute later must not quietly
+    /// move the first one's deadline out to match. A single shared directory
+    /// could not honour that even with two timers: both clips number their
+    /// frames from zero, so the second would overwrite the first's files and
+    /// the first's deadline would then delete the second's frames.
     public func scheduleCleanup(after seconds: TimeInterval) {
-        cleanupTask?.cancel()
-        cleanupTask = Task { [weak self] in
+        let expiring = batchDir
+        cleanupTasks[expiring] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             // Unlike @MainActor, a custom actor isn't a global actor, so this
             // closure doesn't statically inherit its isolation — the compiler
             // requires (and this needs) an explicit await to cross back in.
-            await self?.cleanupAll()
+            await self?.removeBatch(expiring)
         }
+        batchDir = sessionDir.appendingPathComponent(UUID().uuidString)
     }
 
     public func cleanupAll() {
-        cleanupTask?.cancel()
-        cleanupTask = nil
+        for task in cleanupTasks.values { task.cancel() }
+        cleanupTasks.removeAll()
         try? FileManager.default.removeItem(at: sessionDir)
         writtenURLs.removeAll()
-        sessionDir = baseDir.appendingPathComponent(UUID().uuidString)
+        batchDir = sessionDir.appendingPathComponent(UUID().uuidString)
     }
 
     public func currentSessionURLs() -> [URL] {
         writtenURLs
+    }
+
+    private func removeBatch(_ dir: URL) {
+        cleanupTasks[dir] = nil
+        try? FileManager.default.removeItem(at: dir)
+        writtenURLs.removeAll { $0.deletingLastPathComponent() == dir }
     }
 
     deinit {
@@ -60,7 +81,7 @@ public actor TempFileManager {
         // be triggered from any thread), but direct stored-property access is
         // safe here: nothing else can hold a reference to touch these
         // concurrently once we're deinitializing.
-        cleanupTask?.cancel()
+        for task in cleanupTasks.values { task.cancel() }
         try? FileManager.default.removeItem(at: sessionDir)
     }
 }

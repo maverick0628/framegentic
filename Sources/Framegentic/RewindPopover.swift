@@ -32,7 +32,7 @@ final class RewindViewModel {
     private(set) var copiedCount = 0
     private(set) var isDelivering = false
     private(set) var deliveryError: String?
-    private var deliveryTask: Task<Void, Never>?
+    private var deliverySession = 0
 
     /// Set by RewindPopoverController. confirmSelection() calls it once the
     /// toast has had time to be read, so the popover closes itself without
@@ -65,12 +65,22 @@ final class RewindViewModel {
     }
 
     /// Called when the popover closes, so a decoded frame buffer doesn't sit
-    /// in memory between Rewind sessions. Also cancels a delivery still in
-    /// flight — the paste it already started can't be undone, this only stops
-    /// a stale toast or close from firing once the popover is gone.
+    /// in memory between Rewind sessions. It also detaches this view model
+    /// from a delivery still in flight, so a result that arrives after the
+    /// popover is gone toasts to nobody.
+    ///
+    /// Detaches rather than cancels. This popover is transient, so the target
+    /// app coming to the front closes it — mid-sequence, every time an
+    /// auto-paste works. Cancelling from here would reach into that sequence
+    /// and cut its delays to nothing: ⌘V before the app can take it, and with
+    /// Send Automatically on, Return straight after, submitting nothing. The
+    /// keystrokes can't be recalled anyway; only the UI has anything left to
+    /// stop doing.
     func releaseFrames() {
         frames = []
-        deliveryTask?.cancel()
+        deliverySession &+= 1
+        isDelivering = false
+        showToast = false
     }
 
     var currentFrame: CapturedFrame? {
@@ -95,16 +105,18 @@ final class RewindViewModel {
 
     /// Delivers the trimmed range through DeliveryService, to whatever target
     /// Settings has configured — the same activation-and-paste sequence a
-    /// snap uses. `deliveryTask` lets releaseFrames() stop a stale success
-    /// from toasting or closing a popover the user already dismissed.
+    /// snap uses. Every UI mutation below is gated on the session it started
+    /// in, so a delivery the user has already walked away from finishes its
+    /// keystrokes and then changes nothing on screen.
     func confirmSelection() {
         guard !isDelivering else { return }
         let selected = selectedFrames
         guard !selected.isEmpty else { return }
         deliveryError = nil
         isDelivering = true
-        deliveryTask = Task {
-            defer { isDelivering = false }
+        let session = deliverySession
+        Task {
+            defer { if session == deliverySession { isDelivering = false } }
             do {
                 let count = try await delivery.deliverClip(
                     selected,
@@ -112,7 +124,7 @@ final class RewindViewModel {
                     autoSend: settings.autoSend,
                     ttl: TimeInterval(settings.autoDeleteTTLSeconds)
                 )
-                guard !Task.isCancelled else { return }
+                guard session == deliverySession else { return }
                 guard count > 0 else {
                     deliveryError = "Couldn't copy those frames. Try again."
                     return
@@ -120,12 +132,12 @@ final class RewindViewModel {
                 copiedCount = count
                 showToast = true
                 try? await Task.sleep(for: .seconds(1.5))
-                guard !Task.isCancelled else { return }
+                guard session == deliverySession else { return }
                 showToast = false
                 onRequestClose?()
             } catch {
-                guard !Task.isCancelled else { return }
                 Log.paste.error("Rewind delivery failed: \(error.localizedDescription, privacy: .public)")
+                guard session == deliverySession else { return }
                 deliveryError = error.localizedDescription
             }
         }

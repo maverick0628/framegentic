@@ -74,7 +74,7 @@ One hotkey captures your whole screen. Before you press it, know what that means
 
 - Everything visible gets captured — passwords, messages, notifications, all of it.
 - The screenshot replaces whatever was on your clipboard.
-- How long it stays there depends on the target. With an auto-pasting one, Framegentic clears the clipboard a few seconds after a successful paste. With **Clipboard only** the capture stays until you copy something else — the clipboard is the delivery, so expiring it would throw the capture away before you could use it. And if delivery fails, it's left there deliberately, so you can paste it yourself.
+- How long it stays there depends on the target. With an auto-pasting one, Framegentic clears the clipboard a few seconds after a successful paste. With **Clipboard only** a single capture stays until you copy something else — the clipboard is the delivery, so expiring it would throw the capture away before you could use it. And if delivery fails, it's left there deliberately, so you can paste it yourself. A Rewind clip is the exception on both counts: it goes on the clipboard as files, so it is cleared when those files are auto-deleted, whichever target you use and whether or not anything pasted it.
 - With auto-send on, the capture is submitted the instant Return fires — for Claude, that means it reaches Anthropic's servers. There's no undo.
 
 Framegentic itself sends nothing anywhere. It has no network code — it captures, copies and, for targets that auto-paste, types.

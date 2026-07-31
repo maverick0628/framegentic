@@ -785,4 +785,25 @@ final class TempFileManagerTests: XCTestCase {
         XCTAssertTrue(url.path.hasPrefix(tmpDir))
         XCTAssertTrue(url.path.contains("framesnap"))
     }
+
+    // The user is told when each clip disappears, so a later clip must not
+    // move an earlier one's deadline — and must not land on its filenames,
+    // since every clip numbers its frames from zero.
+    func testEachBatchExpiresOnItsOwnDeadline() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+
+        let first = try await manager.write(Data("a".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 0.1)
+        let second = try await manager.write(Data("b".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 60)
+
+        XCTAssertNotEqual(first, second, "A later batch must not reuse an earlier batch's paths")
+
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path),
+                       "The first batch should expire on its own deadline")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path),
+                      "The second batch should still be waiting on its own")
+    }
 }

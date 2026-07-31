@@ -27,6 +27,7 @@ enum DeliveryError: LocalizedError {
 final class DeliveryService {
     private let settleDelay: Duration = .milliseconds(150)
     private let pasteToSendDelay: Duration = .milliseconds(600)
+    private let frontmostPollInterval: Duration = .milliseconds(100)
     private let warmActivationTimeout: TimeInterval = 3
     private let coldLaunchTimeout: TimeInterval = 10
     private let postPasteClearDelay: Duration = .seconds(3)
@@ -53,26 +54,32 @@ final class DeliveryService {
     /// before writing, so the count returned can be lower than `frames.count`
     /// — show the caller that number, not the pre-dedup selection size.
     ///
-    /// Unlike `deliver`, the clear below is scheduled unconditionally, success
-    /// or thrown error: TempFileManager deletes the underlying files on `ttl`
-    /// either way, so the pasteboard entry has to expire on that same clock or
-    /// it outlives the files it points at — the dangling state that is worse
-    /// than either clearing it or letting the files live longer.
+    /// Unlike `deliver`, the clear is scheduled from the write, unconditionally
+    /// and before anything is pasted: TempFileManager starts deleting the
+    /// underlying files on `ttl` from that same instant whether the paste
+    /// works, fails or never happens, so the pasteboard entry has to expire on
+    /// the same clock or it outlives the files it points at — the dangling
+    /// state that is worse than either clearing it or letting the files live
+    /// longer.
     func deliverClip(_ frames: [CapturedFrame],
                       to target: DeliveryTarget,
                       autoSend: Bool,
                       ttl: TimeInterval) async throws -> Int {
-        let count = await pipeline.processAndCopy(frames: frames, ttl: ttl)
-        guard count > 0 else { return 0 }
+        let written = await pipeline.processAndCopy(frames: frames, ttl: ttl)
+        guard written.frames > 0 else { return 0 }
 
-        let changeCount = NSPasteboard.general.changeCount
-        defer { clearClipboardLater(ifStillAt: changeCount, after: .seconds(ttl)) }
+        // Started here rather than on the way out, because TempFileManager
+        // started the files' own ttl at the moment of that write. Scheduling
+        // this after the paste would run the two clocks ten seconds apart on a
+        // cold launch, and the pasteboard would spend that gap pointing at
+        // files already deleted.
+        clearClipboardLater(ifStillAt: written.changeCount, after: .seconds(ttl))
 
         guard target.autoPaste, let bundleID = target.bundleID else {
-            return count
+            return written.frames
         }
         try await activateAndPaste(bundleID: bundleID, displayName: target.displayName, autoSend: autoSend)
-        return count
+        return written.frames
     }
 
     /// Activates `target`, waits for it to take focus, then pastes and
@@ -111,14 +118,14 @@ final class DeliveryService {
         guard await waitForFrontmost(bundleID: bundleID, timeout: timeout) else {
             throw DeliveryError.activationTimedOut(displayName)
         }
-        try? await Task.sleep(for: settleDelay)
+        await delay(settleDelay)
 
         try checkGuard(expecting: bundleID)
         postKey(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
         Log.paste.info("Pasted into \(displayName, privacy: .public)")
 
         if autoSend {
-            try? await Task.sleep(for: pasteToSendDelay)
+            await delay(pasteToSendDelay)
             // Re-checked rather than trusted: focus can change in the 600ms since
             // the paste, and a stray Return lands in whatever is frontmost now.
             try checkGuard(expecting: bundleID)
@@ -127,12 +134,32 @@ final class DeliveryService {
         }
     }
 
+    /// Waits `duration` in a way no caller can shorten.
+    ///
+    /// Every pause in the paste sequence is doing work: the settle gives a
+    /// just-activated app time to accept input, the paste-to-send gap keeps
+    /// Return from submitting before ⌘V has landed, and waitForFrontmost's poll
+    /// is the only thing keeping a cold-launch wait from becoming a hot loop.
+    /// `Task.sleep` returns the instant its task is cancelled, so a cancelled
+    /// caller would collapse all three to zero and auto-send an empty message.
+    /// A timer-backed continuation has no cancellation to observe, which makes
+    /// these delays a property of the sequence rather than of whoever calls it.
+    private func delay(_ duration: Duration) async {
+        let components = duration.components
+        let nanoseconds = components.seconds * 1_000_000_000 + components.attoseconds / 1_000_000_000
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(clamping: nanoseconds))) {
+                continuation.resume()
+            }
+        }
+    }
+
     private func waitForFrontmost(bundleID: String, timeout: TimeInterval) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(timeout))
         while clock.now < deadline {
             if isFrontmost(bundleID) { return true }
-            try? await Task.sleep(for: .milliseconds(100))
+            await delay(frontmostPollInterval)
         }
         return isFrontmost(bundleID)
     }
@@ -183,6 +210,11 @@ final class DeliveryService {
     private func clearClipboardLater(ifStillAt changeCount: Int, after delay: Duration) {
         Task {
             try? await Task.sleep(for: delay)
+            // A cancelled sleep returns immediately, which would clear the
+            // clipboard the moment after it was written instead of at the end
+            // of its life. Nothing holds this task's handle today; the guard
+            // keeps that from being load-bearing.
+            guard !Task.isCancelled else { return }
             let pasteboard = NSPasteboard.general
             if pasteboard.changeCount == changeCount {
                 pasteboard.clearContents()

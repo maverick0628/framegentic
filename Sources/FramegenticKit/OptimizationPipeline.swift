@@ -52,18 +52,25 @@ public actor OptimizationPipeline {
         return urls
     }
 
+    /// Writes the frames out and puts them on the clipboard, reporting how many
+    /// landed and the change count that identifies them.
+    ///
+    /// The change count comes back from the write rather than being re-read by
+    /// the caller: the caller is on another actor, and anything a third party
+    /// copied during that hop would otherwise be mistaken for this clip and
+    /// expire on its clock.
     public func processAndCopy(
         frames: [CapturedFrame],
         maxWidth: Int = 1024,
         jpegQuality: CGFloat = 0.75,
         dedupThreshold: Double = 0.9,
         ttl: TimeInterval = 300
-    ) async -> Int {
+    ) async -> (frames: Int, changeCount: Int) {
         let urls = await process(frames: frames, maxWidth: maxWidth, jpegQuality: jpegQuality, dedupThreshold: dedupThreshold)
-        guard !urls.isEmpty else { return 0 }
-        ClipboardWriter.writeFileURLs(urls)
+        guard !urls.isEmpty else { return (frames: 0, changeCount: 0) }
+        let changeCount = ClipboardWriter.writeFileURLs(urls)
         await tempFileManager.scheduleCleanup(after: ttl)
-        return urls.count
+        return (frames: urls.count, changeCount: changeCount)
     }
 
     public func cleanup() async {
