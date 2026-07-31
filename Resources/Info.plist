@@ -27,6 +27,6 @@
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 Duncan Smith. MIT License.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Framegentic needs screen capture access to take screenshots for Claude analysis.</string>
+    <string>Framegentic captures your screen so you can send it to an AI assistant.</string>
 </dict>
 </plist>
