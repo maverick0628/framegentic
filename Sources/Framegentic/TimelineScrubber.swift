@@ -79,7 +79,13 @@ struct TimelineScrubber: View {
     private func indexForPosition(_ x: CGFloat, in width: CGFloat, total: Int) -> Int {
         guard width > 0, total > 0 else { return 0 }
         let ratio = max(0, min(1, x / width))
-        return Int(round(ratio * CGFloat(total)))
+        let raw = Int(round(ratio * CGFloat(total)))
+        // `total` is padded to 1 even for a single frame so the ratio math
+        // above never divides by zero, but that padding makes it one larger
+        // than the last real index. Without this clamp, a one-frame buffer
+        // hands clipEnd an index outside frames.indices, and selectedFrames
+        // wedges Copy to Clipboard disabled for the rest of the session.
+        return min(raw, max(frameCount - 1, 0))
     }
 
     private func handleView() -> some View {

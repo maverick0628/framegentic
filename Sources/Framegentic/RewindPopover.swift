@@ -15,6 +15,7 @@ import FramegenticKit
 final class RewindViewModel {
     enum State {
         case disabled
+        case permissionDenied
         case empty
         case ready
     }
@@ -41,7 +42,14 @@ final class RewindViewModel {
 
     var state: State {
         guard settings.bufferEnabled else { return .disabled }
-        return frames.isEmpty ? .empty : .ready
+        guard frames.isEmpty else { return .ready }
+        // A denied/revoked Screen Recording permission and a buffer that
+        // simply hasn't filled in yet are both "enabled, zero frames" at the
+        // instant the popover opens — indistinguishable without asking the OS
+        // directly. This is the same preflight check AppDelegate's menu uses
+        // for the identical question, called live rather than cached on
+        // CaptureService, so it can never answer stale.
+        return CGPreflightScreenCaptureAccess() ? .empty : .permissionDenied
     }
 
     func refreshFrames() {
@@ -97,6 +105,7 @@ final class RewindViewModel {
 struct RewindPopoverView: View {
     @Bindable var model: RewindViewModel
     let onOpenSettings: () -> Void
+    let onOpenScreenRecordingSettings: () -> Void
     let onEscape: () -> Void
 
     var body: some View {
@@ -109,6 +118,18 @@ struct RewindPopoverView: View {
                     message: "It keeps a rolling recording of your screen in memory, so you can scrub back and grab a moment after it happens. Turn it on in Settings.",
                     actionTitle: "Open Settings",
                     action: onOpenSettings
+                )
+            case .permissionDenied:
+                // Message text and button wording both come from the same
+                // established copy this app already uses for this exact
+                // condition (CaptureError's alert text, AppDelegate's menu
+                // item) rather than inventing a third phrasing of the same fact.
+                RewindEmptyStateView(
+                    systemImage: "video.slash",
+                    title: "Screen Recording is off",
+                    message: CaptureError.screenRecordingDenied.localizedDescription,
+                    actionTitle: "Grant Screen Recording…",
+                    action: onOpenScreenRecordingSettings
                 )
             case .empty:
                 RewindEmptyStateView(
@@ -201,7 +222,11 @@ final class RewindPopoverController: NSObject, NSPopoverDelegate {
     private let viewModel: RewindViewModel
     private let popover: NSPopover
 
-    init(viewModel: RewindViewModel, onOpenSettings: @escaping () -> Void) {
+    init(
+        viewModel: RewindViewModel,
+        onOpenSettings: @escaping () -> Void,
+        onOpenScreenRecordingSettings: @escaping () -> Void
+    ) {
         self.viewModel = viewModel
         let popover = NSPopover()
         popover.behavior = .transient
@@ -214,6 +239,7 @@ final class RewindPopoverController: NSObject, NSPopoverDelegate {
             rootView: RewindPopoverView(
                 model: viewModel,
                 onOpenSettings: onOpenSettings,
+                onOpenScreenRecordingSettings: onOpenScreenRecordingSettings,
                 onEscape: { [weak self] in self?.close() }
             )
         )

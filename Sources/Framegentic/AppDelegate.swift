@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var settingsWindow = SettingsWindowController(model: model)
     private lazy var rewindPopover = RewindPopoverController(
         viewModel: RewindViewModel(captureService: captureService, settings: model),
-        onOpenSettings: { [weak self] in self?.openSettings() }
+        onOpenSettings: { [weak self] in self?.openSettings() },
+        onOpenScreenRecordingSettings: { [weak self] in self?.openScreenRecordingSettings() }
     )
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false

@@ -1,5 +1,31 @@
 # Decisions
 
+## 2026-07-31 — Rewind's permission-denied state reuses CGPreflightScreenCaptureAccess() directly, no new CaptureService state
+
+Fix round 1 on Task 5 caught that `.empty` covered two different situations: a buffer
+legitimately still filling in, and Screen Recording permission denied or revoked
+(`CaptureService.performStart` reverts to `.idle` silently on a stream-start failure, while
+`bufferEnabled` stays `true`) — the two are indistinguishable from "enabled, zero frames" alone,
+so every future Rewind open told a permission-denied user to wait a few seconds, forever. Rather
+than add an error-state property to `CaptureService`, `RewindViewModel.state` calls
+`CGPreflightScreenCaptureAccess()` directly — the same check `AppDelegate`'s menu already uses
+for the identical question — evaluated live each time `state` is read, so it can't go stale
+between the check and the display. The `.permissionDenied` copy reuses
+`CaptureError.screenRecordingDenied.localizedDescription` for the message and the exact "Grant
+Screen Recording…" wording from the menu item, rather than inventing a third phrasing of the
+same fact.
+
+## 2026-07-31 — TimelineScrubber clamps indexForPosition to frameCount - 1, not just to `total`
+
+Fix round 1 on Task 5: `totalFrames = max(frameCount - 1, 1)` pads to 1 for a single frame so
+the x-position ratio math never divides by zero, but that padding is one larger than the last
+real index. `indexForPosition` used `total` as its upper bound, so a one-frame buffer could hand
+`clipEnd` an index outside `frames.indices`, and `selectedFrames` would then return `[]`
+permanently — Copy to Clipboard disabled for the rest of the session, no crash, no explanation.
+Clamped inside `indexForPosition` itself (`min(raw, max(frameCount - 1, 0))`) rather than at
+each of the three drag-handle call sites, since it's the single choke point all three (start,
+end, playhead) funnel through, and the fix is a no-op for any buffer with 2+ frames.
+
 ## 2026-07-31 — The popover reads a snapshot of the buffer, never a live reference
 
 `CaptureService.currentFrames() -> [CapturedFrame]` is the only way anything outside that
