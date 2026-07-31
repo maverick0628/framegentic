@@ -29,6 +29,8 @@ final class DeliveryService {
     private let pasteToSendDelay: Duration = .milliseconds(600)
     private let warmActivationTimeout: TimeInterval = 3
     private let coldLaunchTimeout: TimeInterval = 10
+    private let postPasteClearDelay: Duration = .seconds(3)
+    private let pipeline = OptimizationPipeline()
 
     /// Delivers whatever is already on the clipboard to `target`.
     ///
@@ -41,7 +43,43 @@ final class DeliveryService {
         guard target.autoPaste, let bundleID = target.bundleID else {
             return
         }
+        try await activateAndPaste(bundleID: bundleID, displayName: target.displayName, autoSend: autoSend)
+        clearClipboardLater(ifStillAt: clipboardChangeCount, after: postPasteClearDelay)
+    }
 
+    /// Delivers a trimmed Rewind clip: several frames become file URLs on the
+    /// clipboard, since a pasteboard item can hold one image as data or many
+    /// file references, never several images. OptimizationPipeline dedups
+    /// before writing, so the count returned can be lower than `frames.count`
+    /// — show the caller that number, not the pre-dedup selection size.
+    ///
+    /// Unlike `deliver`, the clear below is scheduled unconditionally, success
+    /// or thrown error: TempFileManager deletes the underlying files on `ttl`
+    /// either way, so the pasteboard entry has to expire on that same clock or
+    /// it outlives the files it points at — the dangling state that is worse
+    /// than either clearing it or letting the files live longer.
+    func deliverClip(_ frames: [CapturedFrame],
+                      to target: DeliveryTarget,
+                      autoSend: Bool,
+                      ttl: TimeInterval) async throws -> Int {
+        let count = await pipeline.processAndCopy(frames: frames, ttl: ttl)
+        guard count > 0 else { return 0 }
+
+        let changeCount = NSPasteboard.general.changeCount
+        defer { clearClipboardLater(ifStillAt: changeCount, after: .seconds(ttl)) }
+
+        guard target.autoPaste, let bundleID = target.bundleID else {
+            return count
+        }
+        try await activateAndPaste(bundleID: bundleID, displayName: target.displayName, autoSend: autoSend)
+        return count
+    }
+
+    /// Activates `target`, waits for it to take focus, then pastes and
+    /// optionally sends. The one activation-and-paste sequence, shared by
+    /// every delivery path so a clip and a snap behave identically once
+    /// something is already on the clipboard — only what got there differs.
+    private func activateAndPaste(bundleID: String, displayName: String, autoSend: Bool) async throws {
         guard AXIsProcessTrusted() else {
             promptForAccessibility()
             throw DeliveryError.accessibilityDenied
@@ -67,17 +105,17 @@ final class DeliveryService {
             _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config)
             timeout = coldLaunchTimeout
         case .notFound:
-            throw DeliveryError.targetNotInstalled(target.displayName)
+            throw DeliveryError.targetNotInstalled(displayName)
         }
 
         guard await waitForFrontmost(bundleID: bundleID, timeout: timeout) else {
-            throw DeliveryError.activationTimedOut(target.displayName)
+            throw DeliveryError.activationTimedOut(displayName)
         }
         try? await Task.sleep(for: settleDelay)
 
         try checkGuard(expecting: bundleID)
         postKey(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-        Log.paste.info("Pasted into \(target.displayName, privacy: .public)")
+        Log.paste.info("Pasted into \(displayName, privacy: .public)")
 
         if autoSend {
             try? await Task.sleep(for: pasteToSendDelay)
@@ -87,8 +125,6 @@ final class DeliveryService {
             postKey(CGKeyCode(kVK_Return))
             Log.paste.info("Sent")
         }
-
-        clearClipboardLater(ifStillAt: clipboardChangeCount)
     }
 
     private func waitForFrontmost(bundleID: String, timeout: TimeInterval) async -> Bool {
@@ -137,13 +173,16 @@ final class DeliveryService {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Once pasted, the capture has been delivered, and it may contain anything
-    /// visible on screen — so it shouldn't linger. Cleared only if nothing else
-    /// has written since. Every `throw` above skips this, leaving a failed
-    /// delivery on the clipboard for the user to paste themselves.
-    private func clearClipboardLater(ifStillAt changeCount: Int) {
+    /// Whatever got delivered may contain anything visible on screen, so it
+    /// shouldn't linger — cleared only if nothing else has written since.
+    /// `deliver` calls this with a few seconds' grace past a successful paste
+    /// (skipped entirely on failure, leaving the capture for a manual paste);
+    /// `deliverClip` calls it unconditionally with the files' own ttl, since a
+    /// clip's entry is pointers rather than data and needs to expire whether
+    /// or not the paste itself succeeded.
+    private func clearClipboardLater(ifStillAt changeCount: Int, after delay: Duration) {
         Task {
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: delay)
             let pasteboard = NSPasteboard.general
             if pasteboard.changeCount == changeCount {
                 pasteboard.clearContents()

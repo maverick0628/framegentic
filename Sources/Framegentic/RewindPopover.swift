@@ -21,6 +21,7 @@ final class RewindViewModel {
     }
 
     private let captureService: CaptureService
+    private let delivery = DeliveryService()
     let settings: SettingsModel
 
     private(set) var frames: [CapturedFrame] = []
@@ -29,6 +30,9 @@ final class RewindViewModel {
     var clipEnd = 0
     private(set) var showToast = false
     private(set) var copiedCount = 0
+    private(set) var isDelivering = false
+    private(set) var deliveryError: String?
+    private var deliveryTask: Task<Void, Never>?
 
     /// Set by RewindPopoverController. confirmSelection() calls it once the
     /// toast has had time to be read, so the popover closes itself without
@@ -57,12 +61,16 @@ final class RewindViewModel {
         clipStart = 0
         clipEnd = max(frames.count - 1, 0)
         playheadIndex = clipEnd
+        deliveryError = nil
     }
 
     /// Called when the popover closes, so a decoded frame buffer doesn't sit
-    /// in memory between Rewind sessions.
+    /// in memory between Rewind sessions. Also cancels a delivery still in
+    /// flight — the paste it already started can't be undone, this only stops
+    /// a stale toast or close from firing once the popover is gone.
     func releaseFrames() {
         frames = []
+        deliveryTask?.cancel()
     }
 
     var currentFrame: CapturedFrame? {
@@ -85,19 +93,41 @@ final class RewindViewModel {
         return minutes > 0 ? String(format: "%dm %02ds", minutes, remaining) : "\(seconds)s"
     }
 
-    /// Stands in for real delivery until Task 6 wires this through
-    /// OptimizationPipeline and DeliveryService. The interaction it drives —
-    /// pick a range, confirm, see the count and the deletion deadline, then
-    /// the popover closes — is real; only the clipboard write behind it isn't.
+    /// Delivers the trimmed range through DeliveryService, to whatever target
+    /// Settings has configured — the same activation-and-paste sequence a
+    /// snap uses. `deliveryTask` lets releaseFrames() stop a stale success
+    /// from toasting or closing a popover the user already dismissed.
     func confirmSelection() {
+        guard !isDelivering else { return }
         let selected = selectedFrames
         guard !selected.isEmpty else { return }
-        copiedCount = selected.count
-        showToast = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            showToast = false
-            onRequestClose?()
+        deliveryError = nil
+        isDelivering = true
+        deliveryTask = Task {
+            defer { isDelivering = false }
+            do {
+                let count = try await delivery.deliverClip(
+                    selected,
+                    to: settings.deliveryTarget,
+                    autoSend: settings.autoSend,
+                    ttl: TimeInterval(settings.autoDeleteTTLSeconds)
+                )
+                guard !Task.isCancelled else { return }
+                guard count > 0 else {
+                    deliveryError = "Couldn't copy those frames. Try again."
+                    return
+                }
+                copiedCount = count
+                showToast = true
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                showToast = false
+                onRequestClose?()
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.paste.error("Rewind delivery failed: \(error.localizedDescription, privacy: .public)")
+                deliveryError = error.localizedDescription
+            }
         }
     }
 }
@@ -150,6 +180,12 @@ struct RewindPopoverView: View {
                     selectedDuration: model.selectedDurationText,
                     oldestTimeAgo: model.frames.first?.formattedTimeAgo() ?? "0s"
                 )
+                if let deliveryError = model.deliveryError {
+                    Text(deliveryError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 confirmButton
                 footer
             }
@@ -167,12 +203,12 @@ struct RewindPopoverView: View {
 
     private var confirmButton: some View {
         Button(action: { model.confirmSelection() }) {
-            Text("Copy to Clipboard")
+            Text(model.isDelivering ? "Copying…" : "Copy to Clipboard")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
-        .disabled(model.selectedFrames.isEmpty)
+        .disabled(model.selectedFrames.isEmpty || model.isDelivering)
     }
 
     private var footer: some View {
