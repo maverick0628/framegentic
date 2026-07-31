@@ -862,7 +862,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `DECISIONS.md`
 
-- [ ] **Step 1: Log the outcome in `DECISIONS.md`**
+- [x] **Step 1: Log the outcome in `DECISIONS.md`**
 
 Add at the top, above the existing 2026-07-31 entries:
 
@@ -875,7 +875,7 @@ Accessibility unless the user opts into auto-paste. FrameSnap's ring buffer and
 the Rewind mode follow in a separate plan.
 ```
 
-- [ ] **Step 2: Full verification**
+- [x] **Step 2: Full verification**
 
 ```bash
 swift build -c release 2>&1 | grep -ciE 'warning:|error:'

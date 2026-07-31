@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-07-31 — Shipped the rename and delivery targets
+
+Steps 1–2 of the merge design landed: the app is Framegentic, delivery is a
+chosen target, and clipboard-only is the default. The app no longer requires
+Accessibility unless the user opts into auto-paste. FrameSnap's ring buffer and
+the Rewind mode follow in a separate plan.
+
 ## 2026-07-31 — Merge FrameSnap into this app as Framegentic
 
 FrameSnap and ClaudeShot do adjacent halves of one job — capture the screen for an
