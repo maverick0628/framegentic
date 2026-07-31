@@ -73,7 +73,13 @@ public actor TempFileManager {
     private func removeBatch(_ dir: URL) {
         cleanupTasks[dir] = nil
         try? FileManager.default.removeItem(at: dir)
-        writtenURLs.removeAll { $0.deletingLastPathComponent() == dir }
+        // Not `== dir`: deletingLastPathComponent() always returns a
+        // directory-flagged URL (trailing slash), but batchDir never picked
+        // one up — appendingPathComponent(_:) defaults a component to
+        // non-directory, and nothing here ever marks it otherwise. The two
+        // URLs name the same path and still don't compare equal. .path
+        // strings that trailing slash away on both sides.
+        writtenURLs.removeAll { $0.deletingLastPathComponent().path == dir.path }
     }
 
     deinit {

@@ -76,6 +76,14 @@ final class RewindViewModel {
     /// Send Automatically on, Return straight after, submitting nothing. The
     /// keystrokes can't be recalled anyway; only the UI has anything left to
     /// stop doing.
+    ///
+    /// Resetting `isDelivering` here means a reopen can call confirmSelection()
+    /// again before the detached delivery above has finished — this is a UI
+    /// flag, not a lock, and was never meant to serialise anything. That's
+    /// `DeliveryService`'s job: `deliverClip` rejects a second call while one
+    /// is still in flight, on the same instance this view model holds across
+    /// every open and close, so the overlap this allows at the UI layer can't
+    /// reach the pasteboard.
     func releaseFrames() {
         frames = []
         deliverySession &+= 1

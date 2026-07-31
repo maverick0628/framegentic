@@ -806,4 +806,29 @@ final class TempFileManagerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: second.path),
                       "The second batch should still be waiting on its own")
     }
+
+    // A URL equality check here (deletingLastPathComponent() == batchDir)
+    // silently never matches, because deletingLastPathComponent() always
+    // returns a directory-flagged URL and batchDir never was one — verified
+    // separately, outside this suite, with a standalone URL comparison. That
+    // makes this the only test that would have caught it: disk state alone
+    // (as in testEachBatchExpiresOnItsOwnDeadline above) looks correct either
+    // way, since the files really are deleted — only the bookkeeping list lags.
+    func testCurrentSessionURLsPrunesExpiredBatch() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+
+        let first = try await manager.write(Data("a".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 0.1)
+        let second = try await manager.write(Data("b".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 60)
+
+        try await Task.sleep(for: .milliseconds(500))
+
+        let remaining = await manager.currentSessionURLs()
+        XCTAssertFalse(remaining.contains(first),
+                       "An expired batch's files must be pruned once deleted from disk, not just forgotten on disk")
+        XCTAssertTrue(remaining.contains(second),
+                      "A batch still waiting on its own deadline must stay listed")
+    }
 }

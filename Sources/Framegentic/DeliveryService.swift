@@ -8,6 +8,7 @@ enum DeliveryError: LocalizedError {
     case activationTimedOut(String)
     case accessibilityDenied
     case focusLost(String?)
+    case deliveryInProgress
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +20,8 @@ enum DeliveryError: LocalizedError {
             return "Accessibility permission is missing. Grant it in System Settings, then quit and relaunch Framegentic."
         case .focusLost(let bundleID):
             return "\(bundleID ?? "Another app") took focus, so nothing was pasted. Your capture is on the clipboard — paste it with ⌘V."
+        case .deliveryInProgress:
+            return "Still copying the last clip. Wait for it to finish, then try again."
         }
     }
 }
@@ -32,6 +35,20 @@ final class DeliveryService {
     private let coldLaunchTimeout: TimeInterval = 10
     private let postPasteClearDelay: Duration = .seconds(3)
     private let pipeline = OptimizationPipeline()
+
+    /// Guards `deliverClip` only. `deliver` needs nothing equivalent: its
+    /// caller writes the pasteboard before `deliver` is ever called, so by the
+    /// time `deliver` runs there is nothing left inside this class for a
+    /// second call to clobber. `deliverClip` writes the pasteboard itself, and
+    /// RewindViewModel's `isDelivering` cannot be the thing that prevents two
+    /// overlapping writes — it is deliberately reset the moment the popover
+    /// closes, so a detached delivery's UI goes quiet (see
+    /// RewindViewModel.releaseFrames), and that reset is exactly what lets a
+    /// second confirmSelection() start a second deliverClip while the first is
+    /// still mid-flight. A flag on the view model can always be reopened by
+    /// the view model; this one lives one level down, where a second caller
+    /// cannot bypass it no matter what UI state does.
+    private var clipDeliveryInFlight = false
 
     /// Delivers whatever is already on the clipboard to `target`.
     ///
@@ -54,6 +71,14 @@ final class DeliveryService {
     /// before writing, so the count returned can be lower than `frames.count`
     /// — show the caller that number, not the pre-dedup selection size.
     ///
+    /// A second call while one is already running is rejected, not queued:
+    /// two clips have no sensible merged pasteboard outcome. Queueing would
+    /// only delay the same collision — clip B's write would still land on top
+    /// of clip A's URLs, just later, and clip A's already-scheduled clipboard
+    /// clear would still fire on clip A's ttl and blow away clip B's entry
+    /// early. Rejecting outright is the only option that leaves the pasteboard
+    /// holding one clip's identity at a time.
+    ///
     /// Unlike `deliver`, the clear is scheduled from the write, unconditionally
     /// and before anything is pasted: TempFileManager starts deleting the
     /// underlying files on `ttl` from that same instant whether the paste
@@ -65,6 +90,12 @@ final class DeliveryService {
                       to target: DeliveryTarget,
                       autoSend: Bool,
                       ttl: TimeInterval) async throws -> Int {
+        guard !clipDeliveryInFlight else {
+            throw DeliveryError.deliveryInProgress
+        }
+        clipDeliveryInFlight = true
+        defer { clipDeliveryInFlight = false }
+
         let written = await pipeline.processAndCopy(frames: frames, ttl: ttl)
         guard written.frames > 0 else { return 0 }
 
