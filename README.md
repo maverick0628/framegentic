@@ -1,6 +1,25 @@
-# ClaudeShot
+# ClaudeShot — one-hotkey screenshots into Claude
 
-A macOS menu bar app that captures your screen and drops it straight into the Claude desktop app. One hotkey grabs the screen, copies it to the clipboard, switches to Claude and pastes. No save dialog, no drag and drop.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-14%2B-000000)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-6-F05138)](Package.swift)
+[![Tests](https://img.shields.io/badge/tests-34-brightgreen)](Tests/)
+[![Network](https://img.shields.io/badge/network%20code-none-success)](#privacy)
+
+A free, open-source **macOS menu bar app** that captures your screen and drops it
+straight into the **Claude desktop app**. One hotkey grabs the screen, copies it
+to the clipboard, switches to Claude and pastes. No save dialog, no Finder, no
+drag and drop.
+
+**Before:** press ⇧⌘4, drag a region, find the file on the Desktop, drag it into
+Claude, wait, delete the file.
+**After:** press one key.
+
+It sends nothing anywhere. There is no network code in the binary at all — it
+captures, copies and types. See [Privacy](#privacy).
+
+> Not affiliated with or endorsed by Anthropic. "Claude" is Anthropic's
+> trademark; this is an independent tool that works with their desktop app.
 
 ## How it works
 
@@ -37,6 +56,29 @@ One hotkey puts your whole screen in front of Claude. Before you press it, know 
 - With auto-send on, the image reaches Anthropic's servers the moment Return fires. There's no undo.
 
 ClaudeShot itself sends nothing anywhere. It has no network code — it captures, copies and types.
+
+There is no telemetry, no analytics, no update check and no crash reporting. The
+binary links nothing that opens a socket. You can verify that claim rather than
+take it on trust:
+
+```bash
+otool -L /Applications/ClaudeShot.app/Contents/MacOS/ClaudeShot | grep -i -E 'network|curl|http'
+```
+
+## How it compares
+
+| | ClaudeShot | macOS ⇧⌘4 | CleanShot X / Shottr |
+|---|---|---|---|
+| Screenshot to Claude | one keypress | 5 steps via Desktop | 3–4 steps via clipboard |
+| Region select, annotation | **no** | yes | yes |
+| Screenshot history | **no** | Desktop files | yes |
+| Price | free, MIT | built in | paid / freemium |
+| Sends data anywhere | never | never | varies |
+
+This is deliberately not a general screenshot tool. It captures the full main
+display and does exactly one thing with it. If you want region select,
+annotation or a history, use a real screenshot app — they are better at it, and
+this is not trying to compete.
 
 ## Requirements
 
