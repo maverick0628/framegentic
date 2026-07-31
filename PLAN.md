@@ -156,7 +156,7 @@ The value type describing where a capture goes, and the table of known destinati
   - `DeliveryTarget.clipboardOnly`
   - `enum TargetRegistry` with `all: [DeliveryTarget]`, `target(id:) -> DeliveryTarget?`, `defaultTarget: DeliveryTarget`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `Tests/FramegenticKitTests/FramegenticKitTests.swift`:
 
@@ -208,12 +208,12 @@ final class DeliveryTargetTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter DeliveryTargetTests`
 Expected: FAIL — compile error, `cannot find 'TargetRegistry' in scope`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `Sources/FramegenticKit/DeliveryTarget.swift`:
 
@@ -265,12 +265,12 @@ public enum TargetRegistry {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `swift test --filter DeliveryTargetTests`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Sources/FramegenticKit/DeliveryTarget.swift Tests/FramegenticKitTests/FramegenticKitTests.swift
@@ -301,7 +301,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `enum ActivationPlan: Equatable, Sendable { case activateRunning, launch(URL), notFound }`
   - `AppLocator.resolve(bundleID:runningApps:installedAppURL:) -> ActivationPlan`
 
-- [ ] **Step 1: Replace the test suite**
+- [x] **Step 1: Replace the test suite**
 
 Replace the whole `ClaudeLocatorTests` class in `Tests/FramegenticKitTests/FramegenticKitTests.swift` with:
 
@@ -349,12 +349,12 @@ final class AppLocatorTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `swift test --filter AppLocatorTests`
 Expected: FAIL — `cannot find 'AppLocator' in scope`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `git mv Sources/FramegenticKit/ClaudeLocator.swift Sources/FramegenticKit/AppLocator.swift`, then replace its contents:
 
@@ -396,7 +396,7 @@ public enum AppLocator {
 }
 ```
 
-- [ ] **Step 4: Fix `PasteGuardTests`, which this task breaks**
+- [x] **Step 4: Fix `PasteGuardTests`, which this task breaks**
 
 `PasteGuardTests` opens with `private let claude = ClaudeLocator.bundleID`. That static no longer exists once the bundle ID becomes a parameter, so the test target stops compiling. Replace that line with a literal:
 
@@ -418,11 +418,11 @@ While there, add the test the design spec calls for — every existing assertion
     }
 ```
 
-- [ ] **Step 5: Fix the remaining call sites so the build passes**
+- [x] **Step 5: Fix the remaining call sites so the build passes**
 
 `Sources/Framegentic/ClaudeAutomator.swift` references `ClaudeLocator.bundleID`, `ClaudeLocator.resolve` and `ClaudeTarget`. Make the minimal edits to compile: hold a `private let target = TargetRegistry.target(id: "claude") ?? .clipboardOnly` for now and read `target.bundleID ?? ""` where the static was used. Task 4 replaces this file properly — do not redesign it here.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run: `swift test`
 Expected: `Executed 43 tests, with 0 failures`
@@ -432,7 +432,7 @@ The arithmetic: 34 at the start of this plan, +7 from Task 2's `DeliveryTargetTe
 Run: `swift build -c release 2>&1 | grep -ciE 'warning:|error:'`
 Expected: `0`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -754,7 +754,7 @@ Also gate the Accessibility grant item — with clipboard-only selected there is
         if model.deliveryTarget.autoPaste, !AXIsProcessTrusted() {
 ```
 
-- [ ] **Step 4: Verify by hand**
+- [x] **Step 4: Verify by hand**
 
 Run `swift test` (43 pass), a clean warning-free `swift build -c release`, then `bash scripts/build.sh` and launch `.build/Framegentic.app`.
 
@@ -793,7 +793,7 @@ The current README sells a Claude-specific screenshot tool. The product is now a
 - Modify: `Resources/Info.plist` (`NSScreenCaptureUsageDescription`)
 - Modify: `docs/RELEASING.md` (product name)
 
-- [ ] **Step 1: Rewrite `README.md`**
+- [x] **Step 1: Rewrite `README.md`**
 
 Keep the existing structure — How it works, Changing the shortcut, Privacy, How it compares, Requirements, Build, Troubleshooting, Uninstall, Structure, Notes — and rewrite the content around these points:
 
@@ -809,7 +809,7 @@ Keep the existing structure — How it works, Changing the shortcut, Privacy, Ho
 
 Badges to update: the tests badge from 34 to the current count.
 
-- [ ] **Step 2: Update the capture usage string**
+- [x] **Step 2: Update the capture usage string**
 
 `Resources/Info.plist`:
 
@@ -818,7 +818,7 @@ Badges to update: the tests badge from 34 to the current count.
     <string>Framegentic captures your screen so you can send it to an AI assistant.</string>
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 grep -rIn 'ClaudeShot' README.md docs/RELEASING.md Resources/Info.plist
@@ -840,7 +840,7 @@ grep -c 'Claude' README.md
 
 Expected: a non-zero count.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -885,7 +885,7 @@ bash scripts/build.sh 2>&1 | tail -3
 
 Expected: `0` warnings, all tests pass, bundle signs and verifies.
 
-- [ ] **Step 3: Commit and open a PR**
+- [x] **Step 3: Commit and open a PR**
 
 ```bash
 git add -A
@@ -913,6 +913,21 @@ Not blocking this plan, but unresolved:
 ---
 
 ## Completed
+
+**2026-07-31 — Framegentic rename and delivery targets.** Seven tasks executed via
+subagent-driven development. The app is renamed, delivery is a chosen target, and
+clipboard-only is the default — so Accessibility is now opt-in rather than required.
+A final whole-branch review caught a critical bug no per-task review could see: the
+clipboard-only path inherited a 3-second clipboard wipe from the auto-paste path,
+destroying the capture before the user could paste it. Fixed, along with six lesser
+findings. 42 kit tests. One Low-severity race parked, with its one-line fix recorded
+in the branch history. Spec:
+`docs/superpowers/specs/2026-07-31-framegentic-merge-design.md`. Step-by-step history
+is in the git log for `feat/framegentic-rename`.
+
+**Outstanding:** nine manual GUI checks, which the repo owner runs. Note that the
+clipboard check must wait more than ten seconds before pasting — a faster check passes
+against the bug described above.
 
 **2026-07-29 — Shortcut customization.** Nine tasks, executed via subagent-driven
 development. Shipped `KeyCodeNames`, `HotKeyConfig` as a value type,
