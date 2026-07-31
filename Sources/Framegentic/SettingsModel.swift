@@ -33,7 +33,10 @@ final class SettingsModel {
     /// Off by default: an always-on screen recorder is not something to opt a
     /// user out of. Snap works without it; enabling Rewind is what starts it.
     var bufferEnabled: Bool {
-        didSet { UserDefaults.standard.set(bufferEnabled, forKey: Self.bufferEnabledKey) }
+        didSet {
+            UserDefaults.standard.set(bufferEnabled, forKey: Self.bufferEnabledKey)
+            onBufferEnabledChange?(bufferEnabled)
+        }
     }
 
     var bufferWindowSeconds: Int {
@@ -53,6 +56,7 @@ final class SettingsModel {
     }
 
     var onRecordingStateChange: ((Bool) -> Void)?
+    var onBufferEnabledChange: ((Bool) -> Void)?
 
     init(store: HotKeyStore, hotKey: HotKeyManager) {
         self.store = store

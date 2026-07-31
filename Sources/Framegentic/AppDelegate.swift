@@ -5,7 +5,7 @@ import FramegenticKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
-    private let screenshot = ScreenshotService()
+    private let captureService = CaptureService()
     private let delivery = DeliveryService()
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
     private var confirmationTask: Task<Void, Never>?
+    private var isShowingConfirmation = false
+    private var bufferingTransition: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
@@ -23,8 +25,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ? ""
                 : self?.model.hotKeyConfig.menuKeyEquivalent ?? ""
         }
-        screenshot.prewarm()
+        model.onBufferEnabledChange = { [weak self] enabled in
+            self?.setBuffering(enabled)
+        }
+        captureService.prewarm()
+        if model.bufferEnabled {
+            setBuffering(true)
+        }
         Log.app.info("Framegentic launched, hotkey registered: \(self.model.hotKeyRegistered)")
+    }
+
+    /// Best-effort: stopCapture() is async and the process may exit before it
+    /// finishes, same as any other in-flight work at quit time in this app. The
+    /// stream and its background queue are torn down by process exit regardless.
+    func applicationWillTerminate(_ notification: Notification) {
+        let previous = bufferingTransition
+        bufferingTransition = Task { [weak self] in
+            await previous?.value
+            await self?.captureService.stopBuffering()
+        }
+    }
+
+    /// Chained after whatever transition is already in flight, rather than fired
+    /// independently — CaptureService.startBuffering only guards against a second
+    /// start once `stream` is actually set, so two toggles in quick succession
+    /// (settings bounced on/off before the first finishes resolving a display)
+    /// could otherwise start two streams and leak one, or race a stop against a
+    /// start still coming up. Chaining makes every transition run to completion
+    /// in request order before the next one begins, so neither can happen.
+    private func setBuffering(_ enabled: Bool) {
+        let previous = bufferingTransition
+        bufferingTransition = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            if enabled {
+                await self.captureService.startBuffering(
+                    capacity: self.model.bufferCapacity,
+                    frameInterval: self.model.frameIntervalSeconds
+                )
+            } else {
+                await self.captureService.stopBuffering()
+            }
+            self.refreshStatusIcon()
+        }
     }
 
     // MARK: - Status bar
@@ -60,12 +103,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return image
     }
 
+    /// Distinct from the idle glyph on purpose — an app that can reproduce the
+    /// last few minutes of the screen must say so visibly, not as a hidden
+    /// preference. This is what Rewind being on looks like in the menu bar.
+    private static func bufferingIcon() -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let image = NSImage(systemSymbolName: "record.circle",
+                            accessibilityDescription: "Framegentic — Rewind is recording")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }
+
+    /// What the status item shows whenever nothing is actively flashing. The one
+    /// place that decides idle-vs-buffering, so the confirmation tick's revert and
+    /// refreshStatusIcon can never disagree about which icon that is.
+    private func currentIdleIcon() -> NSImage? {
+        captureService.isBuffering ? Self.bufferingIcon() : Self.menuBarIcon()
+    }
+
+    /// Applies currentIdleIcon() unless a confirmation tick is currently showing —
+    /// that tick's own revert reads the same helper a second later, so skipping
+    /// here never leaves the icon stale, only briefly deferred.
+    private func refreshStatusIcon() {
+        guard !isShowingConfirmation else { return }
+        statusItem?.button?.image = currentIdleIcon()
+    }
+
     /// A clipboard-only capture activates nothing, so the menu bar icon is the only
     /// evidence the hotkey did anything. A newer capture takes the indicator over:
     /// the cancelled task bows out without reverting, leaving the revert to whoever
-    /// owns it now.
+    /// owns it now. The revert target is resolved fresh, not captured at flash time,
+    /// so a tick that overlaps a buffering start/stop still reverts to the correct
+    /// icon a second later rather than the one true when it fired.
     private func flashCaptureConfirmation() {
         confirmationTask?.cancel()
+        isShowingConfirmation = true
         statusItem?.button?.image = Self.confirmationIcon()
         confirmationTask = Task { [weak self] in
             do {
@@ -73,7 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } catch {
                 return
             }
-            self?.statusItem?.button?.image = Self.menuBarIcon()
+            self?.isShowingConfirmation = false
+            self?.statusItem?.button?.image = self?.currentIdleIcon()
         }
     }
 
@@ -184,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             defer { isCapturing = false }
             do {
-                let changeCount = try await screenshot.captureToClipboard()
+                let changeCount = try await captureService.captureToClipboard()
                 let target = model.deliveryTarget
                 try await delivery.deliver(to: target,
                                            autoSend: model.autoSend,
