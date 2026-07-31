@@ -67,10 +67,12 @@ struct SettingsView: View {
                 ))
             }
 
-            Text("Sending is manual by default. With auto-send on, the screenshot reaches Anthropic the moment Return fires.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if model.deliveryTarget.autoPaste {
+                Text("Sending is manual by default. With auto-send on, the capture is delivered and submitted to \(model.deliveryTarget.displayName) the moment Return fires — there's no undo.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(20)
         .frame(width: 380)
