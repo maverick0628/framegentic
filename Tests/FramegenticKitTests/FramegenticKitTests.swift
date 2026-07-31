@@ -1,6 +1,6 @@
 import XCTest
 import Carbon.HIToolbox
-@testable import ClaudeShotKit
+@testable import FramegenticKit
 
 final class CaptureGeometryTests: XCTestCase {
     func testCaptureDimensionsFollowDisplayScale() {
@@ -37,29 +37,50 @@ final class DisplaySelectionTests: XCTestCase {
     }
 }
 
-final class ClaudeLocatorTests: XCTestCase {
-    func testResolvesClaudeByBundleIDNotName() {
+final class AppLocatorTests: XCTestCase {
+    private let claude = "com.anthropic.claudefordesktop"
+
+    func testResolvesByBundleIDNotName() {
         let apps = [
             RunningAppInfo(bundleID: "com.evil.claude", localizedName: "Claude"),
-            RunningAppInfo(bundleID: ClaudeLocator.bundleID, localizedName: "Claude Beta")
+            RunningAppInfo(bundleID: claude, localizedName: "Claude Beta")
         ]
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: apps, installedAppURL: nil),
-                       .activateRunning)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: apps, installedAppURL: nil),
+            .activateRunning)
 
         let impostorOnly = [RunningAppInfo(bundleID: "com.evil.claude", localizedName: "Claude")]
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: impostorOnly, installedAppURL: nil),
-                       .notFound)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: impostorOnly, installedAppURL: nil),
+            .notFound)
     }
 
     func testFallsBackToInstalledURLThenNotFound() {
-        let url = URL(fileURLWithPath: "/Users/me/Applications/Claude.app")
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: [], installedAppURL: url), .launch(url))
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: [], installedAppURL: nil), .notFound)
+        let url = URL(fileURLWithPath: "/Applications/Claude.app")
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: [], installedAppURL: url),
+            .launch(url))
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: [], installedAppURL: nil),
+            .notFound)
+    }
+
+    // The generalisation is the point of this type: it must work for a target
+    // that is not Claude, which every assertion above happens to use.
+    func testResolvesANonClaudeTarget() {
+        let cursor = "com.todesktop.230313mzl4w4u92"
+        let apps = [RunningAppInfo(bundleID: cursor, localizedName: "Cursor")]
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: cursor, runningApps: apps, installedAppURL: nil),
+            .activateRunning)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: apps, installedAppURL: nil),
+            .notFound)
     }
 }
 
 final class PasteGuardTests: XCTestCase {
-    private let claude = ClaudeLocator.bundleID
+    private let claude = "com.anthropic.claudefordesktop"
 
     func testPasteAllowedOnlyWhenClaudeFrontmostAndTrusted() {
         XCTAssertEqual(
@@ -80,6 +101,16 @@ final class PasteGuardTests: XCTestCase {
         XCTAssertEqual(
             PasteGuard.evaluate(frontmostBundleID: claude, expectedBundleID: claude, axTrusted: false),
             .blocked(.accessibilityDenied))
+    }
+
+    func testGuardsAnyExpectedBundleIDNotJustClaude() {
+        let cursor = "com.todesktop.230313mzl4w4u92"
+        XCTAssertEqual(
+            PasteGuard.evaluate(frontmostBundleID: cursor, expectedBundleID: cursor, axTrusted: true),
+            .allowed)
+        XCTAssertEqual(
+            PasteGuard.evaluate(frontmostBundleID: claude, expectedBundleID: cursor, axTrusted: true),
+            .blocked(.wrongFrontmostApp(actual: claude)))
     }
 }
 
@@ -283,7 +314,7 @@ final class HotKeyStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        suiteName = "com.duncansmith.claudeshot.tests.\(UUID().uuidString)"
+        suiteName = "com.duncansmith.framegentic.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName) ?? .standard
     }
 
@@ -338,5 +369,44 @@ final class HotKeyStoreTests: XCTestCase {
     /// Writes past `save()` on purpose: the threat is a blob the app never wrote.
     private func store(_ config: HotKeyConfig) throws {
         defaults.set(try JSONEncoder().encode(config), forKey: HotKeyStore.defaultsKey)
+    }
+}
+
+final class DeliveryTargetTests: XCTestCase {
+    func testClipboardOnlyIsTheDefaultAndNeverPastes() {
+        let target = TargetRegistry.defaultTarget
+        XCTAssertEqual(target, DeliveryTarget.clipboardOnly)
+        XCTAssertFalse(target.autoPaste)
+        XCTAssertNil(target.bundleID)
+    }
+
+    func testRegistryContainsClipboardOnlyFirst() {
+        XCTAssertEqual(TargetRegistry.all.first, DeliveryTarget.clipboardOnly)
+        XCTAssertGreaterThan(TargetRegistry.all.count, 1)
+    }
+
+    func testClaudeIsAKnownTargetThatPastes() {
+        guard let claude = TargetRegistry.target(id: "claude") else {
+            return XCTFail("claude should be a known target")
+        }
+        XCTAssertEqual(claude.bundleID, "com.anthropic.claudefordesktop")
+        XCTAssertTrue(claude.autoPaste)
+        XCTAssertEqual(claude.displayName, "Claude")
+    }
+
+    func testUnknownTargetResolvesToNil() {
+        XCTAssertNil(TargetRegistry.target(id: "definitely-not-a-target"))
+    }
+
+    // Every auto-pasting target needs a bundle ID to activate and to guard
+    // against; one without would paste into whatever happened to be frontmost.
+    func testEveryAutoPasteTargetHasABundleID() {
+        for target in TargetRegistry.all where target.autoPaste {
+            XCTAssertNotNil(target.bundleID, "\(target.id) auto-pastes without a bundle ID")
+        }
+    }
+
+    func testIdsAreUnique() {
+        XCTAssertEqual(Set(TargetRegistry.all.map(\.id)).count, TargetRegistry.all.count)
     }
 }

@@ -1,5 +1,5 @@
 import Carbon
-import ClaudeShotKit
+import FramegenticKit
 
 // Carbon is deliberate here: RegisterEventHotKey is the only macOS API that both
 // consumes a global hotkey and works without Accessibility trust. NSEvent global

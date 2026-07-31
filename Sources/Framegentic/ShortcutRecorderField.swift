@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
-import ClaudeShotKit
+import FramegenticKit
 
 @MainActor
 final class ShortcutRecorderView: NSView {

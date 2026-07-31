@@ -2,22 +2,22 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeShot",
+    name: "Framegentic",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
-            name: "ClaudeShotKit",
-            path: "Sources/ClaudeShotKit"
+            name: "FramegenticKit",
+            path: "Sources/FramegenticKit"
         ),
         .executableTarget(
-            name: "ClaudeShot",
-            dependencies: ["ClaudeShotKit"],
-            path: "Sources/ClaudeShot"
+            name: "Framegentic",
+            dependencies: ["FramegenticKit"],
+            path: "Sources/Framegentic"
         ),
         .testTarget(
-            name: "ClaudeShotKitTests",
-            dependencies: ["ClaudeShotKit"],
-            path: "Tests/ClaudeShotKitTests"
+            name: "FramegenticKitTests",
+            dependencies: ["FramegenticKit"],
+            path: "Tests/FramegenticKitTests"
         )
     ]
 )

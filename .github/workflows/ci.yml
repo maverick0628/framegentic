@@ -25,11 +25,11 @@ jobs:
 
       - name: Bundle smoke test
         run: |
-          APP=.build/ClaudeShot.app
-          test -x "$APP/Contents/MacOS/ClaudeShot"
+          APP=.build/Framegentic.app
+          test -x "$APP/Contents/MacOS/Framegentic"
           plutil -lint "$APP/Contents/Info.plist"
           [ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist")" = "true" ]
-          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "com.duncansmith.claudeshot" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "com.duncansmith.framegentic" ]
           codesign --verify --strict "$APP"
           for f in AppIcon.icns MenuBarIcon.png MenuBarIcon@2x.png; do
             test -f "$APP/Contents/Resources/$f"
@@ -71,23 +71,23 @@ jobs:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
         run: |
           echo "$ASC_API_KEY_P8" > key.p8
-          ditto -c -k --keepParent .build/ClaudeShot.app notarize.zip
+          ditto -c -k --keepParent .build/Framegentic.app notarize.zip
           xcrun notarytool submit notarize.zip \
             --key key.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
-          xcrun stapler staple .build/ClaudeShot.app
+          xcrun stapler staple .build/Framegentic.app
           rm key.p8 notarize.zip
 
       - name: Package release artifact
         run: |
-          ditto -c -k --keepParent .build/ClaudeShot.app "ClaudeShot-${GITHUB_REF_NAME#v}.zip"
-          shasum -a 256 "ClaudeShot-${GITHUB_REF_NAME#v}.zip" > "ClaudeShot-${GITHUB_REF_NAME#v}.zip.sha256"
+          ditto -c -k --keepParent .build/Framegentic.app "Framegentic-${GITHUB_REF_NAME#v}.zip"
+          shasum -a 256 "Framegentic-${GITHUB_REF_NAME#v}.zip" > "Framegentic-${GITHUB_REF_NAME#v}.zip.sha256"
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --title "ClaudeShot $GITHUB_REF_NAME" \
+            --title "Framegentic $GITHUB_REF_NAME" \
             --generate-notes \
-            "ClaudeShot-${GITHUB_REF_NAME#v}.zip" \
-            "ClaudeShot-${GITHUB_REF_NAME#v}.zip.sha256"
+            "Framegentic-${GITHUB_REF_NAME#v}.zip" \
+            "Framegentic-${GITHUB_REF_NAME#v}.zip.sha256"

@@ -2,7 +2,7 @@ import Foundation
 import os
 
 enum Log {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.duncansmith.claudeshot"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.duncansmith.framegentic"
 
     static let app = Logger(subsystem: subsystem, category: "app")
     static let capture = Logger(subsystem: subsystem, category: "capture")

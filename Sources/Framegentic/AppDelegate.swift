@@ -1,21 +1,22 @@
 import AppKit
 import ApplicationServices
-import ClaudeShotKit
+import FramegenticKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let screenshot = ScreenshotService()
-    private let automator = ClaudeAutomator()
+    private let delivery = DeliveryService()
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
     private lazy var settingsWindow = SettingsWindowController(model: model)
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
+    private var confirmationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
-        hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
+        hotKey.onHotKey = { [weak self] in self?.capture() }
         model.registerStoredHotKey()
         model.onRecordingStateChange = { [weak self] isRecording in
             self?.captureMenuItem?.keyEquivalent = isRecording
@@ -23,14 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : self?.model.hotKeyConfig.menuKeyEquivalent ?? ""
         }
         screenshot.prewarm()
-        Log.app.info("ClaudeShot launched, hotkey registered: \(self.model.hotKeyRegistered)")
+        Log.app.info("Framegentic launched, hotkey registered: \(self.model.hotKeyRegistered)")
     }
 
     // MARK: - Status bar
 
     private func setupStatusBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.autosaveName = "ClaudeShotStatusItem"
+        item.autosaveName = "FramegenticStatusItem"
         item.button?.image = Self.menuBarIcon()
 
         let menu = NSMenu()
@@ -46,8 +47,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return image
         }
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "ClaudeShot")?
+        return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Framegentic")?
             .withSymbolConfiguration(config)
+    }
+
+    private static func confirmationIcon() -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let image = NSImage(systemSymbolName: "checkmark.circle.fill",
+                            accessibilityDescription: "Capture copied to the clipboard")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }
+
+    /// A clipboard-only capture activates nothing, so the menu bar icon is the only
+    /// evidence the hotkey did anything. A newer capture takes the indicator over:
+    /// the cancelled task bows out without reverting, leaving the revert to whoever
+    /// owns it now.
+    private func flashCaptureConfirmation() {
+        confirmationTask?.cancel()
+        statusItem?.button?.image = Self.confirmationIcon()
+        confirmationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            self?.statusItem?.button?.image = Self.menuBarIcon()
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -56,7 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let config = model.hotKeyConfig
         let capture = NSMenuItem(
-            title: "Screenshot → Claude",
+            title: model.deliveryTarget.autoPaste
+                ? "Capture → \(model.deliveryTarget.displayName)"
+                : "Capture to Clipboard",
             action: #selector(captureFromMenu),
             keyEquivalent: model.isRecording ? "" : config.menuKeyEquivalent
         )
@@ -88,14 +117,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let send = NSMenuItem(
-            title: "Send Automatically After Paste",
-            action: #selector(toggleAutoSend),
-            keyEquivalent: ""
-        )
-        send.target = self
-        send.state = model.autoSend ? .on : .off
-        menu.addItem(send)
+        if model.deliveryTarget.autoPaste {
+            let send = NSMenuItem(
+                title: "Send Automatically After Paste",
+                action: #selector(toggleAutoSend),
+                keyEquivalent: ""
+            )
+            send.target = self
+            send.state = model.autoSend ? .on : .off
+            menu.addItem(send)
+        }
 
         let login = NSMenuItem(
             title: "Start at Login",
@@ -116,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             permissionItems.append(item)
         }
-        if !AXIsProcessTrusted() {
+        if model.deliveryTarget.autoPaste, !AXIsProcessTrusted() {
             let item = NSMenuItem(
                 title: "Grant Accessibility…",
                 action: #selector(openAccessibilitySettings),
@@ -132,11 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let about = NSMenuItem(title: "About ClaudeShot", action: #selector(showAbout), keyEquivalent: "")
+        let about = NSMenuItem(title: "About Framegentic", action: #selector(showAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
 
-        let quit = NSMenuItem(title: "Quit ClaudeShot", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Framegentic", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -144,18 +175,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Capture flow
 
     @objc private func captureFromMenu() {
-        screenshotToClaude()
+        capture()
     }
 
-    private func screenshotToClaude() {
+    private func capture() {
         guard !isCapturing else { return }
         isCapturing = true
         Task {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await automator.deliver(autoSend: model.autoSend,
+                let target = model.deliveryTarget
+                try await delivery.deliver(to: target,
+                                           autoSend: model.autoSend,
                                            clipboardChangeCount: changeCount)
+                if !target.autoPaste { flashCaptureConfirmation() }
             } catch {
                 report(error)
             }
@@ -169,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch error {
         case CaptureError.screenRecordingDenied:
             settingsPane = "Privacy_ScreenCapture"
-        case PasteError.accessibilityDenied:
+        case DeliveryError.accessibilityDenied:
             settingsPane = "Privacy_Accessibility"
         default:
             settingsPane = nil
@@ -177,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "ClaudeShot"
+        alert.messageText = "Framegentic"
         alert.informativeText = error.localizedDescription
         if let settingsPane {
             alert.addButton(withTitle: "Open System Settings")
