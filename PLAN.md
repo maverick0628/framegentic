@@ -670,7 +670,7 @@ Persist the chosen target and expose it in the settings window. Auto-send become
 - Consumes: `DeliveryTarget`, `TargetRegistry`.
 - Produces: `SettingsModel.deliveryTarget: DeliveryTarget` (settable, persisted).
 
-- [ ] **Step 1: Add the setting to `SettingsModel`**
+- [x] **Step 1: Add the setting to `SettingsModel`**
 
 Add alongside the existing `autoSendKey`:
 
@@ -689,7 +689,7 @@ In `init`, resolve the stored id, falling back to the default when it is absent 
         self.deliveryTarget = storedID.flatMap(TargetRegistry.target(id:)) ?? TargetRegistry.defaultTarget
 ```
 
-- [ ] **Step 2: Add the picker to `SettingsView`**
+- [x] **Step 2: Add the picker to `SettingsView`**
 
 Replace the toggles `VStack` with:
 
@@ -726,7 +726,7 @@ Replace the toggles `VStack` with:
             }
 ```
 
-- [ ] **Step 3: Update `AppDelegate`**
+- [x] **Step 3: Update `AppDelegate`**
 
 Swap the placeholder from Task 4 for the real setting:
 
@@ -769,7 +769,7 @@ Check each and report the result:
 7. The chosen target survives quit and relaunch.
 8. Recording a new shortcut still works and the menu key equivalent follows it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

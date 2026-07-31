@@ -7,6 +7,7 @@ import FramegenticKit
 @Observable
 final class SettingsModel {
     private static let autoSendKey = "AutoSendAfterPaste"
+    private static let deliveryTargetKey = "DeliveryTargetID"
 
     private let store: HotKeyStore
     private let hotKey: HotKeyManager
@@ -21,6 +22,10 @@ final class SettingsModel {
         didSet { UserDefaults.standard.set(autoSend, forKey: Self.autoSendKey) }
     }
 
+    var deliveryTarget: DeliveryTarget {
+        didSet { UserDefaults.standard.set(deliveryTarget.id, forKey: Self.deliveryTargetKey) }
+    }
+
     var onRecordingStateChange: ((Bool) -> Void)?
 
     init(store: HotKeyStore, hotKey: HotKeyManager) {
@@ -28,6 +33,9 @@ final class SettingsModel {
         self.hotKey = hotKey
         self.hotKeyConfig = store.load()
         self.autoSend = UserDefaults.standard.bool(forKey: Self.autoSendKey)
+
+        let storedID = UserDefaults.standard.string(forKey: Self.deliveryTargetKey)
+        self.deliveryTarget = storedID.flatMap(TargetRegistry.target(id:)) ?? TargetRegistry.defaultTarget
     }
 
     var canResetToDefault: Bool { hotKeyConfig != .default }

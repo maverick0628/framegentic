@@ -1,4 +1,5 @@
 import SwiftUI
+import FramegenticKit
 
 struct SettingsView: View {
     @Bindable var model: SettingsModel
@@ -36,7 +37,30 @@ struct SettingsView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Send automatically after paste", isOn: $model.autoSend)
+                Picker("Deliver to", selection: Binding(
+                    get: { model.deliveryTarget.id },
+                    set: { id in
+                        if let target = TargetRegistry.target(id: id) { model.deliveryTarget = target }
+                    }
+                )) {
+                    ForEach(TargetRegistry.all) { target in
+                        Text(target.displayName).tag(target.id)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if model.deliveryTarget.autoPaste {
+                    Toggle("Send automatically after paste", isOn: $model.autoSend)
+                    Text("Pasting into \(model.deliveryTarget.displayName) needs Accessibility permission.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Captures go to the clipboard. Paste them wherever you like with ⌘V — no extra permission needed.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Toggle("Start at login", isOn: Binding(
                     get: { model.startAtLogin },
                     set: { model.setStartAtLogin($0) }

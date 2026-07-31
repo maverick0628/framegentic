@@ -56,7 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let config = model.hotKeyConfig
         let capture = NSMenuItem(
-            title: "Screenshot → Claude",
+            title: model.deliveryTarget.autoPaste
+                ? "Capture → \(model.deliveryTarget.displayName)"
+                : "Capture to Clipboard",
             action: #selector(captureFromMenu),
             keyEquivalent: model.isRecording ? "" : config.menuKeyEquivalent
         )
@@ -88,14 +90,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let send = NSMenuItem(
-            title: "Send Automatically After Paste",
-            action: #selector(toggleAutoSend),
-            keyEquivalent: ""
-        )
-        send.target = self
-        send.state = model.autoSend ? .on : .off
-        menu.addItem(send)
+        if model.deliveryTarget.autoPaste {
+            let send = NSMenuItem(
+                title: "Send Automatically After Paste",
+                action: #selector(toggleAutoSend),
+                keyEquivalent: ""
+            )
+            send.target = self
+            send.state = model.autoSend ? .on : .off
+            menu.addItem(send)
+        }
 
         let login = NSMenuItem(
             title: "Start at Login",
@@ -116,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             permissionItems.append(item)
         }
-        if !AXIsProcessTrusted() {
+        if model.deliveryTarget.autoPaste, !AXIsProcessTrusted() {
             let item = NSMenuItem(
                 title: "Grant Accessibility…",
                 action: #selector(openAccessibilitySettings),
@@ -154,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await delivery.deliver(to: TargetRegistry.defaultTarget,
+                try await delivery.deliver(to: model.deliveryTarget,
                                            autoSend: model.autoSend,
                                            clipboardChangeCount: changeCount)
             } catch {
