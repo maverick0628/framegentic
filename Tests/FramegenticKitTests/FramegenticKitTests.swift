@@ -340,3 +340,49 @@ final class HotKeyStoreTests: XCTestCase {
         defaults.set(try JSONEncoder().encode(config), forKey: HotKeyStore.defaultsKey)
     }
 }
+
+final class DeliveryTargetTests: XCTestCase {
+    func testClipboardOnlyIsTheDefaultAndNeverPastes() {
+        let target = TargetRegistry.defaultTarget
+        XCTAssertEqual(target, DeliveryTarget.clipboardOnly)
+        XCTAssertFalse(target.autoPaste)
+        XCTAssertNil(target.bundleID)
+    }
+
+    func testRegistryContainsClipboardOnlyFirst() {
+        XCTAssertEqual(TargetRegistry.all.first, DeliveryTarget.clipboardOnly)
+        XCTAssertGreaterThan(TargetRegistry.all.count, 1)
+    }
+
+    func testClaudeIsAKnownTargetThatPastes() {
+        guard let claude = TargetRegistry.target(id: "claude") else {
+            return XCTFail("claude should be a known target")
+        }
+        XCTAssertEqual(claude.bundleID, "com.anthropic.claudefordesktop")
+        XCTAssertTrue(claude.autoPaste)
+        XCTAssertEqual(claude.displayName, "Claude")
+    }
+
+    func testUnknownTargetResolvesToNil() {
+        XCTAssertNil(TargetRegistry.target(id: "definitely-not-a-target"))
+    }
+
+    // Every auto-pasting target needs a bundle ID to activate and to guard
+    // against; one without would paste into whatever happened to be frontmost.
+    func testEveryAutoPasteTargetHasABundleID() {
+        for target in TargetRegistry.all where target.autoPaste {
+            XCTAssertNotNil(target.bundleID, "\(target.id) auto-pastes without a bundle ID")
+        }
+    }
+
+    func testIdsAreUnique() {
+        XCTAssertEqual(Set(TargetRegistry.all.map(\.id)).count, TargetRegistry.all.count)
+    }
+
+    func testRoundTripsThroughCodable() throws {
+        let decoded = try JSONDecoder().decode(
+            DeliveryTarget.self,
+            from: JSONEncoder().encode(DeliveryTarget.clipboardOnly))
+        XCTAssertEqual(decoded, DeliveryTarget.clipboardOnly)
+    }
+}
