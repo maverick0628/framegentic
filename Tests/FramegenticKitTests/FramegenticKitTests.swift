@@ -586,7 +586,6 @@ final class ImageProcessorTests: XCTestCase {
     }
 }
 
-@MainActor
 final class OptimizationPipelineTests: XCTestCase {
     private func makeImage(width: Int, height: Int, brightness: UInt8 = 128) throws -> CGImage {
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
@@ -665,14 +664,14 @@ final class OptimizationPipelineTests: XCTestCase {
         XCTAssertEqual(deduped.count, 3)
     }
 
-    func testProcessProducesFileURLs() throws {
+    func testProcessProducesFileURLs() async throws {
         let img = try makeImage(width: 2560, height: 1600)
         let frames = [
             CapturedFrame(image: img),
             CapturedFrame(image: try makeImage(width: 2560, height: 1600, brightness: 50)),
         ]
         let pipeline = OptimizationPipeline()
-        let urls = pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        let urls = await pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
         XCTAssertEqual(urls.count, 2)
         for url in urls {
             XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
@@ -680,66 +679,65 @@ final class OptimizationPipelineTests: XCTestCase {
             XCTAssertEqual(data[0], 0xFF)
             XCTAssertEqual(data[1], 0xD8)
         }
-        pipeline.cleanup()
+        await pipeline.cleanup()
     }
 
-    func testProcessDownsamples() throws {
+    func testProcessDownsamples() async throws {
         let img = try makeImage(width: 2560, height: 1600)
         let frames = [CapturedFrame(image: img)]
         let pipeline = OptimizationPipeline()
-        let urls = pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
-        pipeline.cleanup()
+        let urls = await pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        await pipeline.cleanup()
         XCTAssertFalse(urls.isEmpty)
     }
 }
 
-// XCTestCase's setUp()/tearDown() are nonisolated (inherited from an
-// Objective-C base), so bridging them to a @MainActor fixture via the async
-// overrides just trades one warning for another (super's no-op body has
-// nothing to suspend on). A manager per test plus defer sidesteps the
-// override entirely and needs no isolation bridging.
-@MainActor
+// TempFileManager is a plain actor, so write/cleanupAll are async and each
+// test needs to be too. `defer` can't help with teardown here — `await` is
+// not permitted in a defer body — so cleanup is registered via XCTest's own
+// async addTeardownBlock, which (like defer) still runs after a failed
+// assertion or a thrown error, just without the language-level restriction.
 final class TempFileManagerTests: XCTestCase {
-    func testWriteCreatesFile() throws {
+    func testWriteCreatesFile() async throws {
         let manager = TempFileManager()
-        defer { manager.cleanupAll() }
+        addTeardownBlock { await manager.cleanupAll() }
         let data = Data("test".utf8)
-        let url = try manager.write(data, filename: "test.jpg")
+        let url = try await manager.write(data, filename: "test.jpg")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testWriteCreatesSessionDirectory() throws {
+    func testWriteCreatesSessionDirectory() async throws {
         let manager = TempFileManager()
-        defer { manager.cleanupAll() }
+        addTeardownBlock { await manager.cleanupAll() }
         let data = Data("test".utf8)
-        let url = try manager.write(data, filename: "test.jpg")
+        let url = try await manager.write(data, filename: "test.jpg")
         let sessionDir = url.deletingLastPathComponent()
         var isDir: ObjCBool = false
         XCTAssertTrue(FileManager.default.fileExists(atPath: sessionDir.path, isDirectory: &isDir))
         XCTAssertTrue(isDir.boolValue)
     }
 
-    func testWriteMultipleFiles() throws {
+    func testWriteMultipleFiles() async throws {
         let manager = TempFileManager()
-        defer { manager.cleanupAll() }
-        let url1 = try manager.write(Data("a".utf8), filename: "frame-0.jpg")
-        let url2 = try manager.write(Data("b".utf8), filename: "frame-1.jpg")
+        addTeardownBlock { await manager.cleanupAll() }
+        let url1 = try await manager.write(Data("a".utf8), filename: "frame-0.jpg")
+        let url2 = try await manager.write(Data("b".utf8), filename: "frame-1.jpg")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url1.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: url2.path))
         XCTAssertEqual(url1.deletingLastPathComponent(), url2.deletingLastPathComponent())
     }
 
-    func testCleanupAllRemovesFiles() throws {
+    func testCleanupAllRemovesFiles() async throws {
         let manager = TempFileManager()
-        let url = try manager.write(Data("x".utf8), filename: "test.jpg")
-        manager.cleanupAll()
+        let url = try await manager.write(Data("x".utf8), filename: "test.jpg")
+        await manager.cleanupAll()
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testSessionDirectoryInTmpDir() throws {
+    func testSessionDirectoryInTmpDir() async throws {
         let manager = TempFileManager()
-        defer { manager.cleanupAll() }
-        let url = try manager.write(Data("x".utf8), filename: "test.jpg")
+        addTeardownBlock { await manager.cleanupAll() }
+        let url = try await manager.write(Data("x".utf8), filename: "test.jpg")
         let tmpDir = FileManager.default.temporaryDirectory.path
         XCTAssertTrue(url.path.hasPrefix(tmpDir))
         XCTAssertTrue(url.path.contains("framesnap"))

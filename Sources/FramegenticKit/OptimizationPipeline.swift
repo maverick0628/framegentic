@@ -1,15 +1,20 @@
 import Foundation
 import CoreGraphics
 
-// Isolated to match TempFileManager, which it owns: see that type for why.
-@MainActor
-public final class OptimizationPipeline {
+// A plain actor, not @MainActor: this type does JPEG encoding and file I/O.
+// Nothing calls it yet, but the capture loop (a later task) will push every
+// captured frame through here at a sub-second interval, and this app is a
+// menu bar app whose scrubber UI can't afford to contend with that on the
+// main thread. Actor isolation still serialises access to tempFileManager
+// (closing the same race @MainActor would have), just without pinning the
+// work to a specific thread.
+public actor OptimizationPipeline {
     private let tempFileManager = TempFileManager()
 
     public init() {}
 
     // Pure and stateless (unlike the rest of this type), so it stays callable
-    // without hopping to the main actor.
+    // without hopping onto the actor.
     public nonisolated static func dedup(_ frames: [CapturedFrame], threshold: Double) -> [CapturedFrame] {
         guard frames.count > 2 else { return frames }
 
@@ -32,7 +37,7 @@ public final class OptimizationPipeline {
         maxWidth: Int = 1024,
         jpegQuality: CGFloat = 0.75,
         dedupThreshold: Double = 0.9
-    ) -> [URL] {
+    ) async -> [URL] {
         let deduped = Self.dedup(frames, threshold: dedupThreshold)
         var urls: [URL] = []
 
@@ -40,7 +45,7 @@ public final class OptimizationPipeline {
             let downsampled = ImageProcessor.downsample(frame.image, maxWidth: maxWidth)
             guard let jpegData = ImageProcessor.encodeJPEG(downsampled, quality: jpegQuality) else { continue }
             let filename = String(format: "frame-%03d.jpg", index)
-            guard let url = try? tempFileManager.write(jpegData, filename: filename) else { continue }
+            guard let url = try? await tempFileManager.write(jpegData, filename: filename) else { continue }
             urls.append(url)
         }
 
@@ -53,15 +58,15 @@ public final class OptimizationPipeline {
         jpegQuality: CGFloat = 0.75,
         dedupThreshold: Double = 0.9,
         ttl: TimeInterval = 300
-    ) -> Int {
-        let urls = process(frames: frames, maxWidth: maxWidth, jpegQuality: jpegQuality, dedupThreshold: dedupThreshold)
+    ) async -> Int {
+        let urls = await process(frames: frames, maxWidth: maxWidth, jpegQuality: jpegQuality, dedupThreshold: dedupThreshold)
         guard !urls.isEmpty else { return 0 }
         ClipboardWriter.writeFileURLs(urls)
-        tempFileManager.scheduleCleanup(after: ttl)
+        await tempFileManager.scheduleCleanup(after: ttl)
         return urls.count
     }
 
-    public func cleanup() {
-        tempFileManager.cleanupAll()
+    public func cleanup() async {
+        await tempFileManager.cleanupAll()
     }
 }

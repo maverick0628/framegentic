@@ -1,6 +1,19 @@
 # Decisions
 
-## 2026-07-31 — TempFileManager and OptimizationPipeline are @MainActor, not locked
+## 2026-07-31 — TempFileManager and OptimizationPipeline are plain actors, not @MainActor (supersedes the entry below)
+
+Review caught that `@MainActor` pinned JPEG encoding and file I/O to the main thread. Nothing
+consumes this code yet, but Task 3's capture loop pushes every captured frame through
+`OptimizationPipeline` at a sub-second interval, and this menu bar app's scrubber UI can't
+afford that contention. Switched both types to a plain `actor` instead — isolation still
+serialises access to `tempFileManager`, closing the same race, without binding the work to
+one thread.
+
+Five production call sites became `await` and seven ported test methods became `async
+throws`. `TempFileManagerTests` swapped `defer` for XCTest's async `addTeardownBlock`, since
+`defer` bodies can't contain `await`.
+
+## 2026-07-31 — TempFileManager and OptimizationPipeline are @MainActor, not locked (superseded — see entry above)
 
 Porting FrameSnap's pipeline into the Kit surfaced a real (if compiler-silent) data
 race: `TempFileManager`'s cleanup timer ran on a background GCD queue while writes
