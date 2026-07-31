@@ -3,55 +3,62 @@ import ApplicationServices
 import Carbon.HIToolbox
 import FramegenticKit
 
-enum PasteError: LocalizedError {
-    case claudeNotInstalled
-    case activationTimedOut
+enum DeliveryError: LocalizedError {
+    case targetNotInstalled(String)
+    case activationTimedOut(String)
     case accessibilityDenied
     case focusLost(String?)
 
     var errorDescription: String? {
         switch self {
-        case .claudeNotInstalled:
-            return "Claude isn't installed. Install the Claude desktop app and try again."
-        case .activationTimedOut:
-            return "Claude didn't come to the front in time. Your screenshot is on the clipboard — paste it with ⌘V."
+        case .targetNotInstalled(let name):
+            return "\(name) isn't installed. Install it, or switch delivery to Clipboard only in Settings."
+        case .activationTimedOut(let name):
+            return "\(name) didn't come to the front in time. Your capture is on the clipboard — paste it with ⌘V."
         case .accessibilityDenied:
             return "Accessibility permission is missing. Grant it in System Settings, then quit and relaunch Framegentic."
         case .focusLost(let bundleID):
-            return "\(bundleID ?? "Another app") took focus, so nothing was pasted. Your screenshot is on the clipboard — paste it with ⌘V."
+            return "\(bundleID ?? "Another app") took focus, so nothing was pasted. Your capture is on the clipboard — paste it with ⌘V."
         }
     }
 }
 
 @MainActor
-final class ClaudeAutomator {
+final class DeliveryService {
     private let settleDelay: Duration = .milliseconds(150)
     private let pasteToSendDelay: Duration = .milliseconds(600)
     private let warmActivationTimeout: TimeInterval = 3
     private let coldLaunchTimeout: TimeInterval = 10
-    // Task 4 replaces this file with real target selection; this keeps it compiling.
-    private let target = TargetRegistry.target(id: "claude") ?? .clipboardOnly
 
-    /// Activates (or launches) Claude, waits until it is actually frontmost, then
-    /// pastes. The Return keystroke only fires when `autoSend` is on, and every
-    /// keystroke is re-guarded against the frontmost app immediately before posting.
-    func deliver(autoSend: Bool, clipboardChangeCount: Int) async throws {
+    /// Delivers whatever is already on the clipboard to `target`.
+    ///
+    /// A target that does not auto-paste returns immediately: the capture is on
+    /// the clipboard and that is the whole contract. Accessibility is never
+    /// requested on that path, which is why it is the default.
+    func deliver(to target: DeliveryTarget,
+                 autoSend: Bool,
+                 clipboardChangeCount: Int) async throws {
+        guard target.autoPaste, let bundleID = target.bundleID else {
+            clearClipboardLater(ifStillAt: clipboardChangeCount)
+            return
+        }
+
         guard AXIsProcessTrusted() else {
             promptForAccessibility()
-            throw PasteError.accessibilityDenied
+            throw DeliveryError.accessibilityDenied
         }
 
         let runningApps = NSWorkspace.shared.runningApplications.map {
             RunningAppInfo(bundleID: $0.bundleIdentifier, localizedName: $0.localizedName)
         }
-        let installedURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: target.bundleID ?? ""
-        )
+        let installedURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
 
         let timeout: TimeInterval
-        switch AppLocator.resolve(bundleID: target.bundleID ?? "", runningApps: runningApps, installedAppURL: installedURL) {
+        switch AppLocator.resolve(bundleID: bundleID,
+                                  runningApps: runningApps,
+                                  installedAppURL: installedURL) {
         case .activateRunning:
-            NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleID ?? "")
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
                 .first?
                 .activate()
             timeout = warmActivationTimeout
@@ -61,21 +68,21 @@ final class ClaudeAutomator {
             _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config)
             timeout = coldLaunchTimeout
         case .notFound:
-            throw PasteError.claudeNotInstalled
+            throw DeliveryError.targetNotInstalled(target.displayName)
         }
 
-        guard await waitForClaudeFrontmost(timeout: timeout) else {
-            throw PasteError.activationTimedOut
+        guard await waitForFrontmost(bundleID: bundleID, timeout: timeout) else {
+            throw DeliveryError.activationTimedOut(target.displayName)
         }
         try? await Task.sleep(for: settleDelay)
 
-        try checkGuard()
+        try checkGuard(expecting: bundleID)
         postKey(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-        Log.paste.info("Pasted screenshot into Claude")
+        Log.paste.info("Pasted into \(target.displayName, privacy: .public)")
 
         if autoSend {
             try? await Task.sleep(for: pasteToSendDelay)
-            try checkGuard()
+            try checkGuard(expecting: bundleID)
             postKey(CGKeyCode(kVK_Return))
             Log.paste.info("Sent")
         }
@@ -83,33 +90,33 @@ final class ClaudeAutomator {
         clearClipboardLater(ifStillAt: clipboardChangeCount)
     }
 
-    private func waitForClaudeFrontmost(timeout: TimeInterval) async -> Bool {
+    private func waitForFrontmost(bundleID: String, timeout: TimeInterval) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(timeout))
         while clock.now < deadline {
-            if claudeIsFrontmost { return true }
+            if isFrontmost(bundleID) { return true }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        return claudeIsFrontmost
+        return isFrontmost(bundleID)
     }
 
-    private var claudeIsFrontmost: Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == target.bundleID ?? ""
+    private func isFrontmost(_ bundleID: String) -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleID
     }
 
-    private func checkGuard() throws {
+    private func checkGuard(expecting bundleID: String) throws {
         let decision = PasteGuard.evaluate(
             frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            expectedBundleID: target.bundleID ?? "",
+            expectedBundleID: bundleID,
             axTrusted: AXIsProcessTrusted()
         )
         switch decision {
         case .allowed:
             return
         case .blocked(.accessibilityDenied):
-            throw PasteError.accessibilityDenied
+            throw DeliveryError.accessibilityDenied
         case .blocked(.wrongFrontmostApp(let actual)):
-            throw PasteError.focusLost(actual)
+            throw DeliveryError.focusLost(actual)
         }
     }
 
@@ -129,15 +136,15 @@ final class ClaudeAutomator {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// The screenshot may contain anything visible on screen, so it shouldn't sit on
-    /// the clipboard after delivery. Cleared only if nothing else has written since.
+    /// The capture may contain anything visible on screen, so it shouldn't sit on
+    /// the clipboard indefinitely. Cleared only if nothing else has written since.
     private func clearClipboardLater(ifStillAt changeCount: Int) {
         Task {
             try? await Task.sleep(for: .seconds(3))
             let pasteboard = NSPasteboard.general
             if pasteboard.changeCount == changeCount {
                 pasteboard.clearContents()
-                Log.paste.info("Cleared screenshot from clipboard")
+                Log.paste.info("Cleared capture from clipboard")
             }
         }
     }

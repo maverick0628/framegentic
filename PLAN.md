@@ -459,7 +459,7 @@ The app-layer delivery path, parameterised by target. When the target does not a
 - Consumes: `DeliveryTarget`, `TargetRegistry` (Task 2); `AppLocator`, `ActivationPlan`, `PasteGuard` (Task 3 and existing kit).
 - Produces: `DeliveryService.deliver(to:autoSend:clipboardChangeCount:) async throws`
 
-- [ ] **Step 1: Write the implementation**
+- [x] **Step 1: Write the implementation**
 
 `git mv Sources/Framegentic/ClaudeAutomator.swift Sources/Framegentic/DeliveryService.swift`, then replace its contents:
 
@@ -617,7 +617,7 @@ final class DeliveryService {
 }
 ```
 
-- [ ] **Step 2: Update the call site in `AppDelegate`**
+- [x] **Step 2: Update the call site in `AppDelegate`**
 
 Rename the stored property `automator` to `delivery` and its type to `DeliveryService`, then change the call inside `screenshotToClaude()` — rename that method to `capture()` — to pass the target:
 
@@ -632,7 +632,7 @@ Rename the stored property `automator` to `delivery` and its type to `DeliverySe
 
 Also update `report(_:)`, which switches on `PasteError` — the cases are now `DeliveryError.accessibilityDenied` and `CaptureError.screenRecordingDenied`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `swift test`
 Expected: `Executed 43 tests, with 0 failures`
@@ -642,7 +642,7 @@ Expected: `0`
 
 Run: `bash scripts/build.sh` — bundle builds and signs.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A

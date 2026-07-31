@@ -6,7 +6,7 @@ import FramegenticKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let screenshot = ScreenshotService()
-    private let automator = ClaudeAutomator()
+    private let delivery = DeliveryService()
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
     private lazy var settingsWindow = SettingsWindowController(model: model)
@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
-        hotKey.onHotKey = { [weak self] in self?.screenshotToClaude() }
+        hotKey.onHotKey = { [weak self] in self?.capture() }
         model.registerStoredHotKey()
         model.onRecordingStateChange = { [weak self] isRecording in
             self?.captureMenuItem?.keyEquivalent = isRecording
@@ -144,17 +144,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Capture flow
 
     @objc private func captureFromMenu() {
-        screenshotToClaude()
+        capture()
     }
 
-    private func screenshotToClaude() {
+    private func capture() {
         guard !isCapturing else { return }
         isCapturing = true
         Task {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await automator.deliver(autoSend: model.autoSend,
+                try await delivery.deliver(to: TargetRegistry.defaultTarget,
+                                           autoSend: model.autoSend,
                                            clipboardChangeCount: changeCount)
             } catch {
                 report(error)
@@ -169,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch error {
         case CaptureError.screenRecordingDenied:
             settingsPane = "Privacy_ScreenCapture"
-        case PasteError.accessibilityDenied:
+        case DeliveryError.accessibilityDenied:
             settingsPane = "Privacy_Accessibility"
         default:
             settingsPane = nil
