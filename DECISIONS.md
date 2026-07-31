@@ -1,5 +1,39 @@
 # Decisions
 
+## 2026-07-31 — Merge FrameSnap into this app as Framegentic
+
+FrameSnap and ClaudeShot do adjacent halves of one job — capture the screen for an
+AI — on the same platform, the same framework and the same Kit/App split. Each has
+the better implementation of something the other also has: ClaudeShot's hotkey
+system (Carbon, configurable, validated, 34 tests) against FrameSnap's capture
+(ring buffer, adaptive rate, dedup). Merging takes the stronger half of each.
+
+This repo is the target rather than FrameSnap's: it is SwiftPM and Swift 6, has the
+notarizing release workflow, and is current. FrameSnap is an Xcode project untouched
+since June. See docs/superpowers/specs/2026-07-31-framegentic-merge-design.md.
+
+## 2026-07-31 — Delivery is a target, not a mode; clipboard-only is the default
+
+The two apps disagree about the last step — FrameSnap copies and stops, ClaudeShot
+activates and pastes. Rather than ship two modes, delivery becomes a chosen target
+(bundle ID, name, autoPaste flag) with clipboard-only as the default. Adding Cursor
+or ChatGPT later is a table entry, not a code path.
+
+Clipboard-only defaults because auto-paste needs Accessibility, simulates keystrokes
+and steals focus — the source of most support burden today. Opt-in means most users
+never grant Accessibility at all.
+
+It also fixes the trademark posture: Claude becomes a target the tool works with
+rather than the product's identity, which is referential use and defensible.
+
+## 2026-07-31 — The frame buffer is off by default and never touches disk
+
+Merging a continuous screen buffer into an app whose pitch is "nothing persists"
+weakens a claim worth keeping. So Snap works with the buffer off, enabling Rewind is
+what turns continuous capture on, frames live only in memory, and the menu bar shows
+when the buffer is running. The "no network code" claim survives the merge unchanged.
+
+
 ## 2026-07-29 — Validate the stored shortcut in `HotKeyStore.load()`, not at registration
 
 A foreign `defaults write` of a bare key would otherwise register globally and turn every
