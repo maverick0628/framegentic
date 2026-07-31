@@ -1,5 +1,25 @@
 # Decisions
 
+## 2026-07-31 — TempFileManager and OptimizationPipeline are @MainActor, not locked
+
+Porting FrameSnap's pipeline into the Kit surfaced a real (if compiler-silent) data
+race: `TempFileManager`'s cleanup timer ran on a background GCD queue while writes
+land on whatever thread the caller uses — `Dispatch`'s handler closures aren't
+`@Sendable` in this SDK, so Swift 6 never flagged it. Isolated both types to
+`@MainActor` instead of adding a lock, matching FrameSnap's own `CaptureViewModel`
+(already `@MainActor`, already owning the pipeline). The background timer became a
+MainActor-confined `Task` with `Task.sleep`. First `@MainActor` types in the Kit —
+Task 2/3's capture loop and scrubber UI need to consume them on that assumption, or
+this isolation needs revisiting.
+
+## 2026-07-31 — CapturedFrame's Sendable conformance is real, not @unchecked
+
+The port brief expected `@unchecked Sendable` for the CGImage-holding struct, since
+older SDKs never marked CGImage Sendable. Checked rather than assumed: this
+toolchain (Swift 6.3.3) already conforms CGImage to Sendable, confirmed with a
+throwaway generic-constraint compile check plus a non-Sendable negative control
+before trusting it. No `@unchecked` anywhere in the ported pipeline.
+
 ## 2026-07-31 — Clipboard-only keeps the capture; the menu bar confirms it
 
 The 3-second clipboard wipe used to run on the clipboard-only path too, which
