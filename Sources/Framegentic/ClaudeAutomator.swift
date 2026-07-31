@@ -1,7 +1,7 @@
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
-import ClaudeShotKit
+import FramegenticKit
 
 enum PasteError: LocalizedError {
     case claudeNotInstalled
@@ -16,7 +16,7 @@ enum PasteError: LocalizedError {
         case .activationTimedOut:
             return "Claude didn't come to the front in time. Your screenshot is on the clipboard — paste it with ⌘V."
         case .accessibilityDenied:
-            return "Accessibility permission is missing. Grant it in System Settings, then quit and relaunch ClaudeShot."
+            return "Accessibility permission is missing. Grant it in System Settings, then quit and relaunch Framegentic."
         case .focusLost(let bundleID):
             return "\(bundleID ?? "Another app") took focus, so nothing was pasted. Your screenshot is on the clipboard — paste it with ⌘V."
         }

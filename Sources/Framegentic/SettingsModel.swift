@@ -1,7 +1,7 @@
 import AppKit
 import Observation
 import ServiceManagement
-import ClaudeShotKit
+import FramegenticKit
 
 @MainActor
 @Observable

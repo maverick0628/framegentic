@@ -23,7 +23,7 @@ final class SettingsWindowController {
 
         let hosting = NSHostingController(rootView: SettingsView(model: model))
         let created = NSWindow(contentViewController: hosting)
-        created.title = "ClaudeShot Settings"
+        created.title = "Framegentic Settings"
         created.styleMask = [.titled, .closable]
         created.isReleasedWhenClosed = false
         created.center()

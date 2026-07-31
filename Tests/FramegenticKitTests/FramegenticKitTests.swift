@@ -1,6 +1,6 @@
 import XCTest
 import Carbon.HIToolbox
-@testable import ClaudeShotKit
+@testable import FramegenticKit
 
 final class CaptureGeometryTests: XCTestCase {
     func testCaptureDimensionsFollowDisplayScale() {
@@ -283,7 +283,7 @@ final class HotKeyStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        suiteName = "com.duncansmith.claudeshot.tests.\(UUID().uuidString)"
+        suiteName = "com.duncansmith.framegentic.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName) ?? .standard
     }
 

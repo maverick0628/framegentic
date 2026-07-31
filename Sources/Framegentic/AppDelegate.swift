@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import ClaudeShotKit
+import FramegenticKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -23,14 +23,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 : self?.model.hotKeyConfig.menuKeyEquivalent ?? ""
         }
         screenshot.prewarm()
-        Log.app.info("ClaudeShot launched, hotkey registered: \(self.model.hotKeyRegistered)")
+        Log.app.info("Framegentic launched, hotkey registered: \(self.model.hotKeyRegistered)")
     }
 
     // MARK: - Status bar
 
     private func setupStatusBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.autosaveName = "ClaudeShotStatusItem"
+        item.autosaveName = "FramegenticStatusItem"
         item.button?.image = Self.menuBarIcon()
 
         let menu = NSMenu()
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return image
         }
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "ClaudeShot")?
+        return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Framegentic")?
             .withSymbolConfiguration(config)
     }
 
@@ -132,11 +132,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let about = NSMenuItem(title: "About ClaudeShot", action: #selector(showAbout), keyEquivalent: "")
+        let about = NSMenuItem(title: "About Framegentic", action: #selector(showAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
 
-        let quit = NSMenuItem(title: "Quit ClaudeShot", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Framegentic", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "ClaudeShot"
+        alert.messageText = "Framegentic"
         alert.informativeText = error.localizedDescription
         if let settingsPane {
             alert.addButton(withTitle: "Open System Settings")

@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PRODUCT="ClaudeShot"
+PRODUCT="Framegentic"
 APP=".build/$PRODUCT.app"
 VERSION="${VERSION:-0.0.0-dev}"
 BUILD_NUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"

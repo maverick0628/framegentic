@@ -1,4 +1,4 @@
-# Releasing ClaudeShot
+# Releasing Framegentic
 
 Releases are cut by pushing a `v*` tag. CI builds, signs with Developer ID, notarizes, staples and attaches a zip + SHA-256 checksum to a GitHub release.
 
@@ -41,12 +41,12 @@ VERSION=1.0.0 SIGN_IDENTITY="Developer ID Application" ./scripts/build.sh
 Then notarize manually if distributing:
 
 ```bash
-ditto -c -k --keepParent .build/ClaudeShot.app ClaudeShot.zip
-xcrun notarytool submit ClaudeShot.zip --keychain-profile claudeshot --wait
-xcrun stapler staple .build/ClaudeShot.app
+ditto -c -k --keepParent .build/Framegentic.app Framegentic.zip
+xcrun notarytool submit Framegentic.zip --keychain-profile framegentic --wait
+xcrun stapler staple .build/Framegentic.app
 ```
 
-(`notarytool store-credentials claudeshot` once beforehand to save the API key locally.)
+(`notarytool store-credentials framegentic` once beforehand to save the API key locally.)
 
 ## Notes
 

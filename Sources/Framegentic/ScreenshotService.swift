@@ -1,7 +1,7 @@
 import AppKit
 // @preconcurrency: older SDKs (CI runners) don't mark SCK types Sendable yet.
 @preconcurrency import ScreenCaptureKit
-import ClaudeShotKit
+import FramegenticKit
 
 enum CaptureError: LocalizedError {
     case screenRecordingDenied
@@ -12,7 +12,7 @@ enum CaptureError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .screenRecordingDenied:
-            return "Screen Recording permission is missing. Grant it in System Settings, then quit and relaunch ClaudeShot."
+            return "Screen Recording permission is missing. Grant it in System Settings, then quit and relaunch Framegentic."
         case .noDisplay:
             return "No display found to capture."
         case .pngEncodingFailed:

@@ -47,7 +47,7 @@ Mechanical but wide. Nothing behavioural changes; the app builds and passes its 
 - Rename: `Tests/ClaudeShotKitTests/` → `Tests/FramegenticKitTests/`
 - Modify: `Package.swift`, `Resources/Info.plist`, `scripts/build.sh`, `.github/workflows/ci.yml`, `docs/RELEASING.md`
 
-- [ ] **Step 1: Move the directories with git**
+- [x] **Step 1: Move the directories with git**
 
 ```bash
 git mv Sources/ClaudeShot Sources/Framegentic
@@ -56,7 +56,7 @@ git mv Tests/ClaudeShotKitTests Tests/FramegenticKitTests
 git mv Tests/FramegenticKitTests/ClaudeShotKitTests.swift Tests/FramegenticKitTests/FramegenticKitTests.swift
 ```
 
-- [ ] **Step 2: Update `Package.swift`**
+- [x] **Step 2: Update `Package.swift`**
 
 ```swift
 // swift-tools-version:6.0
@@ -84,7 +84,7 @@ let package = Package(
 )
 ```
 
-- [ ] **Step 3: Replace the product name in source, scripts and CI**
+- [x] **Step 3: Replace the product name in source, scripts and CI**
 
 Replace `ClaudeShot` → `Framegentic` and `claudeshot` → `framegentic` across Swift sources, `scripts/build.sh`, `.github/workflows/ci.yml`, `Resources/Info.plist` and `docs/RELEASING.md`. This includes `import ClaudeShotKit` → `import FramegenticKit` and `@testable import ClaudeShotKit` → `@testable import FramegenticKit`.
 
@@ -107,7 +107,7 @@ In `Resources/Info.plist` set:
 
 Leave `NSScreenCaptureUsageDescription` wording alone for now; Task 6 revises copy.
 
-- [ ] **Step 4: Verify nothing behavioural changed**
+- [x] **Step 4: Verify nothing behavioural changed**
 
 Run: `swift build -c release 2>&1 | grep -ciE 'warning:|error:'`
 Expected: `0`
@@ -126,7 +126,7 @@ grep -rIn 'ClaudeShot\|claudeshot' --include='*.swift' --include='*.sh' --includ
 
 Expected: no output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
