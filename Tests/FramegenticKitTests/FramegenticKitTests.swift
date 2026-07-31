@@ -325,51 +325,94 @@ final class HotKeyStoreTests: XCTestCase {
     }
 
     func testLoadReturnsDefaultWhenNothingStored() {
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testSaveThenLoadRoundTrips() {
         let store = HotKeyStore(defaults: defaults)
         let config = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
                                   carbonModifiers: UInt32(optionKey | shiftKey))
-        store.save(config)
-        XCTAssertEqual(store.load(), config)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), config)
+        store.save(config, for: .capture)
+        XCTAssertEqual(store.load(.capture), config)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), config)
     }
 
     func testLoadReturnsDefaultWhenStoredBlobIsCorrupt() {
-        defaults.set(Data("not json".utf8), forKey: HotKeyStore.defaultsKey)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        defaults.set(Data("not json".utf8), forKey: HotKeyStore.Shortcut.capture.rawValue)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadReturnsDefaultWhenStoredValueIsWrongType() {
-        defaults.set("⌘⇧6", forKey: HotKeyStore.defaultsKey)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        defaults.set("⌘⇧6", forKey: HotKeyStore.Shortcut.capture.rawValue)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     // A hostile `defaults write` is well-formed JSON that the app's own UI would
     // never produce. Without a validation pass, a bare key registers globally and
     // every "a" typed anywhere fires a capture.
     func testLoadReturnsDefaultWhenStoredShortcutHasNoRequiredModifier() throws {
-        try store(HotKeyConfig(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: 0))
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        try store(HotKeyConfig(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: 0), for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadReturnsDefaultWhenStoredShortcutIsReserved() throws {
-        try store(HotKeyConfig(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)))
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        try store(HotKeyConfig(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)), for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadStillReturnsAValidStoredShortcut() throws {
         let valid = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
                                  carbonModifiers: UInt32(optionKey | shiftKey))
-        try store(valid)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), valid)
+        try store(valid, for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), valid)
     }
 
     /// Writes past `save()` on purpose: the threat is a blob the app never wrote.
-    private func store(_ config: HotKeyConfig) throws {
-        defaults.set(try JSONEncoder().encode(config), forKey: HotKeyStore.defaultsKey)
+    private func store(_ config: HotKeyConfig, for shortcut: HotKeyStore.Shortcut) throws {
+        defaults.set(try JSONEncoder().encode(config), forKey: shortcut.rawValue)
+    }
+
+    // MARK: - Two independently-stored shortcuts
+
+    // The trap this test exists for: if Rewind's default were ever something the
+    // validator rejects, "Reset to Default" could never work for it — the same
+    // self-consistency guarantee HotKeyValidatorTests.testAcceptsItsOwnDefault
+    // pins for Capture's default.
+    func testRewindDefaultValidatesAndDiffersFromCaptureDefault() {
+        XCTAssertEqual(HotKeyValidator.validate(.rewindDefault), .valid)
+        XCTAssertNotEqual(HotKeyConfig.rewindDefault, HotKeyConfig.default)
+    }
+
+    func testEachShortcutFallsBackToItsOwnDefaultWhenUnset() {
+        let store = HotKeyStore(defaults: defaults)
+        XCTAssertEqual(store.load(.capture), .default)
+        XCTAssertEqual(store.load(.rewind), .rewindDefault)
+    }
+
+    func testSavingOneShortcutDoesNotDisturbTheOther() {
+        let store = HotKeyStore(defaults: defaults)
+        let captureConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
+                                         carbonModifiers: UInt32(optionKey | shiftKey))
+        store.save(captureConfig, for: .capture)
+        XCTAssertEqual(store.load(.capture), captureConfig)
+        XCTAssertEqual(store.load(.rewind), .rewindDefault)
+
+        let rewindConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_8),
+                                        carbonModifiers: UInt32(cmdKey | shiftKey))
+        store.save(rewindConfig, for: .rewind)
+        XCTAssertEqual(store.load(.rewind), rewindConfig)
+        XCTAssertEqual(store.load(.capture), captureConfig, "saving Rewind must not disturb Capture")
+    }
+
+    func testCorruptBlobForOneShortcutDoesNotAffectTheOther() throws {
+        let store = HotKeyStore(defaults: defaults)
+        let rewindConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_8),
+                                        carbonModifiers: UInt32(cmdKey | shiftKey))
+        store.save(rewindConfig, for: .rewind)
+        defaults.set(Data("not json".utf8), forKey: HotKeyStore.Shortcut.capture.rawValue)
+
+        XCTAssertEqual(store.load(.capture), .default, "a corrupt Capture blob must fall back to Capture's default")
+        XCTAssertEqual(store.load(.rewind), rewindConfig, "a corrupt Capture blob must not affect Rewind")
     }
 }
 

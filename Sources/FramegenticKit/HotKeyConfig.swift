@@ -15,6 +15,14 @@ public struct HotKeyConfig: Sendable, Equatable, Codable {
         carbonModifiers: UInt32(cmdKey | shiftKey)
     )
 
+    /// Sequential with Snap's ⇧⌘6. Unlike ⇧⌘3/4/5, ⇧⌘7 is not one of the system's
+    /// reserved screenshot combos, so it needs no Touch-Bar-only exception from
+    /// HotKeyValidator the way Snap's own default does.
+    public static let rewindDefault = HotKeyConfig(
+        keyCode: UInt32(kVK_ANSI_7),
+        carbonModifiers: UInt32(cmdKey | shiftKey)
+    )
+
     public var menuModifiers: NSEvent.ModifierFlags {
         Self.modifierFlags(fromCarbon: carbonModifiers)
     }

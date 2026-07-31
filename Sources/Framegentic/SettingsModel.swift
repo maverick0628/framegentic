@@ -17,9 +17,12 @@ final class SettingsModel {
     private let hotKey: HotKeyManager
 
     private(set) var hotKeyConfig: HotKeyConfig
+    private(set) var rewindHotKeyConfig: HotKeyConfig
     private(set) var hotKeyRegistered = false
+    private(set) var rewindHotKeyRegistered = false
     private(set) var isRecording = false
     private(set) var shortcutError: String?
+    private(set) var rewindShortcutError: String?
     private(set) var startAtLogin = false
 
     var autoSend: Bool {
@@ -61,7 +64,8 @@ final class SettingsModel {
     init(store: HotKeyStore, hotKey: HotKeyManager) {
         self.store = store
         self.hotKey = hotKey
-        self.hotKeyConfig = store.load()
+        self.hotKeyConfig = store.load(.capture)
+        self.rewindHotKeyConfig = store.load(.rewind)
         self.autoSend = UserDefaults.standard.bool(forKey: Self.autoSendKey)
 
         let storedID = UserDefaults.standard.string(forKey: Self.deliveryTargetKey)
@@ -83,56 +87,109 @@ final class SettingsModel {
     }
 
     var canResetToDefault: Bool { hotKeyConfig != .default }
+    var canResetRewindToDefault: Bool { rewindHotKeyConfig != .rewindDefault }
 
-    func registerStoredHotKey() {
-        hotKeyRegistered = hotKey.register(hotKeyConfig)
+    func registerStoredHotKeys() {
+        hotKeyRegistered = hotKey.register(hotKeyConfig, for: .capture)
+        rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
         refreshStartAtLogin()
     }
 
-    /// Validate, register, then persist — in that order, so a shortcut that
-    /// Carbon refuses is never written to the store.
+    private func config(for shortcut: HotKeyStore.Shortcut) -> HotKeyConfig {
+        switch shortcut {
+        case .capture: return hotKeyConfig
+        case .rewind: return rewindHotKeyConfig
+        }
+    }
+
+    private func setConfig(_ config: HotKeyConfig, for shortcut: HotKeyStore.Shortcut) {
+        switch shortcut {
+        case .capture: hotKeyConfig = config
+        case .rewind: rewindHotKeyConfig = config
+        }
+    }
+
+    private func setRegistered(_ registered: Bool, for shortcut: HotKeyStore.Shortcut) {
+        switch shortcut {
+        case .capture: hotKeyRegistered = registered
+        case .rewind: rewindHotKeyRegistered = registered
+        }
+    }
+
+    private func setError(_ message: String?, for shortcut: HotKeyStore.Shortcut) {
+        switch shortcut {
+        case .capture: shortcutError = message
+        case .rewind: rewindShortcutError = message
+        }
+    }
+
+    private func displayName(for shortcut: HotKeyStore.Shortcut) -> String {
+        switch shortcut {
+        case .capture: return "Snap"
+        case .rewind: return "Rewind"
+        }
+    }
+
+    /// Validate, reject a collision with the app's *other* shortcut, register,
+    /// then persist — in that order, so a shortcut that collides or that Carbon
+    /// refuses is never written to the store. The collision check lives here
+    /// rather than in HotKeyValidator because this is the only place that knows
+    /// both of the app's current bindings at once.
     @discardableResult
-    func apply(_ candidate: HotKeyConfig) -> Bool {
+    func apply(_ candidate: HotKeyConfig, for shortcut: HotKeyStore.Shortcut) -> Bool {
         switch HotKeyValidator.validate(candidate) {
         case .rejected(.missingRequiredModifier):
-            shortcutError = "Add ⌘, ⌃ or ⌥ — without one it would fire while you type."
+            setError("Add ⌘, ⌃ or ⌥ — without one it would fire while you type.", for: shortcut)
             return false
         case .rejected(.reserved(let owner)):
-            shortcutError = "\(candidate.displayString) belongs to \(owner)."
+            setError("\(candidate.displayString) belongs to \(owner).", for: shortcut)
             return false
         case .valid:
             break
         }
 
-        guard hotKey.register(candidate) else {
-            hotKeyRegistered = hotKey.register(hotKeyConfig)
-            shortcutError = "\(candidate.displayString) is already taken by another app."
+        let other: HotKeyStore.Shortcut = shortcut == .capture ? .rewind : .capture
+        guard candidate != config(for: other) else {
+            setError("\(candidate.displayString) is already \(displayName(for: other))'s shortcut.", for: shortcut)
             return false
         }
 
-        hotKeyConfig = candidate
-        store.save(candidate)
-        hotKeyRegistered = true
-        shortcutError = nil
+        guard hotKey.register(candidate, for: shortcut) else {
+            setRegistered(hotKey.register(config(for: shortcut), for: shortcut), for: shortcut)
+            setError("\(candidate.displayString) is already taken by another app.", for: shortcut)
+            return false
+        }
+
+        setConfig(candidate, for: shortcut)
+        store.save(candidate, for: shortcut)
+        setRegistered(true, for: shortcut)
+        setError(nil, for: shortcut)
         return true
     }
 
     func resetToDefault() {
-        apply(.default)
+        apply(.default, for: .capture)
     }
 
-    /// Carbon consumes the registered combo before AppKit dispatch, so the
-    /// hotkey must be suspended or the current shortcut can never be re-recorded.
+    func resetRewindToDefault() {
+        apply(.rewindDefault, for: .rewind)
+    }
+
+    /// Carbon consumes a registered combo before AppKit dispatch, so recording
+    /// either shortcut suspends both — leaving the other live while recording
+    /// would let its combo fire instead of being captured by the recorder.
     func beginRecording() {
         isRecording = true
         shortcutError = nil
+        rewindShortcutError = nil
         hotKey.unregister()
         onRecordingStateChange?(true)
     }
 
     func endRecording() {
         isRecording = false
-        hotKeyRegistered = hotKey.register(hotKeyConfig)
+        hotKeyRegistered = hotKey.register(hotKeyConfig, for: .capture)
+        rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
         onRecordingStateChange?(false)
     }
 
@@ -142,6 +199,7 @@ final class SettingsModel {
     /// seen nothing yet at this point.
     func windowWillShow() {
         shortcutError = nil
+        rewindShortcutError = nil
         refreshStartAtLogin()
     }
 

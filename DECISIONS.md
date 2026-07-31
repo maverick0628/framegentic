@@ -1,5 +1,43 @@
 # Decisions
 
+## 2026-07-31 — Rewind's shortcut collision check lives in SettingsModel, not HotKeyValidator
+
+HotKeyValidator only knows the reserved-system-shortcut table; it has no notion of the
+app's own second binding, and shouldn't gain one — it stays a pure function of one combo.
+SettingsModel is the only object holding both HotKeyConfigs at once, so `apply(_:for:)`
+rejects a candidate that matches the *other* shortcut's current config before registering
+it, with a "already Rewind's/Snap's shortcut" message. HotKeyStore.load() deliberately
+doesn't cross-check the two stored blobs either, for the same reason — it only ever sees
+one key at a time. The guarantee holds for anything going through the app's own UI; a
+`defaults write` that hand-crafts matching valid blobs for both keys is outside that
+boundary and degrades to one shortcut failing to register (surfaced same as any other
+registration failure), not a crash.
+
+## 2026-07-31 — Rewind's default is ⇧⌘7
+
+Sequential with Snap's ⇧⌘6 and easy to explain. Unlike ⇧⌘3/4/5, it isn't one of the
+system's reserved screenshot combos, so it needs no Touch-Bar-only exception in
+HotKeyValidator's reserved table — same self-consistency requirement the capture default
+already has a test for (Reset to Default has to produce something the validator accepts).
+
+## 2026-07-31 — HotKeyStore is keyed by a Shortcut enum, not duplicated members
+
+`Shortcut: String, CaseIterable` (`.capture` / `.rewind`) backs both the UserDefaults key
+(its raw value) and the per-shortcut fallback default. `load()`/`save()` stay single
+parameterised methods instead of a load/loadRewind/save/saveRewind quartet, so the
+existing corrupt-blob validation logic isn't duplicated. A future third shortcut is one
+enum case, not new members. HotKeyManager reuses the same enum (via a typealias) to key
+its Carbon `EventHotKeyID`s and to dispatch its shared event handler, rather than
+inventing a second parallel "which shortcut" type.
+
+## 2026-07-31 — Recording either hotkey suspends both, unconditionally
+
+`HotKeyManager.unregister()` now tears down every registered shortcut rather than one.
+Carbon consumes a registered combo before AppKit ever sees the keystroke, so leaving the
+other shortcut live during recording would let it fire instead of being captured. Simpler
+than threading "which shortcut is being recorded" through SettingsModel, and the two
+recorder fields can't be interacted with simultaneously in the UI anyway.
+
 ## 2026-07-31 — TempFileManager and OptimizationPipeline are plain actors, not @MainActor (supersedes the entry below)
 
 Review caught that `@MainActor` pinned JPEG encoding and file I/O to the main thread. Nothing

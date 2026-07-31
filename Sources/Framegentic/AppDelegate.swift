@@ -19,8 +19,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
-        hotKey.onHotKey = { [weak self] in self?.capture() }
-        model.registerStoredHotKey()
+        hotKey.onHotKey = { [weak self] shortcut in
+            switch shortcut {
+            case .capture: self?.capture()
+            case .rewind: self?.rewindHotKeyFired()
+            }
+        }
+        model.registerStoredHotKeys()
         model.onRecordingStateChange = { [weak self] isRecording in
             self?.captureMenuItem?.keyEquivalent = isRecording
                 ? ""
@@ -39,7 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if model.bufferEnabled {
             setBuffering(true)
         }
-        Log.app.info("Framegentic launched, hotkey registered: \(self.model.hotKeyRegistered)")
+        Log.app.info("""
+            Framegentic launched, hotkey registered: \(self.model.hotKeyRegistered), \
+            rewind hotkey registered: \(self.model.rewindHotKeyRegistered)
+            """)
     }
 
     /// Best-effort: stopCapture() is async and the process may exit before it
@@ -197,6 +205,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(warning)
         }
 
+        if !model.rewindHotKeyRegistered {
+            let warning = NSMenuItem(
+                title: "Rewind hotkey unavailable — is \(model.rewindHotKeyConfig.displayString) taken?",
+                action: #selector(openSettings),
+                keyEquivalent: ""
+            )
+            warning.target = self
+            menu.addItem(warning)
+        }
+
         let settings = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -267,6 +285,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func captureFromMenu() {
         capture()
+    }
+
+    /// Stand-in until the scrubber popover lands: proves the binding fires
+    /// independently of Snap's rather than opening anything yet.
+    private func rewindHotKeyFired() {
+        Log.hotkey.info("Rewind hotkey fired")
     }
 
     private func capture() {
