@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var settingsWindow = SettingsWindowController(model: model)
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
+    private var confirmationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
@@ -48,6 +49,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         return NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Framegentic")?
             .withSymbolConfiguration(config)
+    }
+
+    private static func confirmationIcon() -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let image = NSImage(systemSymbolName: "checkmark.circle.fill",
+                            accessibilityDescription: "Capture copied to the clipboard")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }
+
+    /// A clipboard-only capture activates nothing, so the menu bar icon is the only
+    /// evidence the hotkey did anything. A newer capture takes the indicator over:
+    /// the cancelled task bows out without reverting, leaving the revert to whoever
+    /// owns it now.
+    private func flashCaptureConfirmation() {
+        confirmationTask?.cancel()
+        statusItem?.button?.image = Self.confirmationIcon()
+        confirmationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            self?.statusItem?.button?.image = Self.menuBarIcon()
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -158,9 +185,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { isCapturing = false }
             do {
                 let changeCount = try await screenshot.captureToClipboard()
-                try await delivery.deliver(to: model.deliveryTarget,
+                let target = model.deliveryTarget
+                try await delivery.deliver(to: target,
                                            autoSend: model.autoSend,
                                            clipboardChangeCount: changeCount)
+                if !target.autoPaste { flashCaptureConfirmation() }
             } catch {
                 report(error)
             }

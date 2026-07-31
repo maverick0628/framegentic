@@ -32,14 +32,13 @@ final class DeliveryService {
 
     /// Delivers whatever is already on the clipboard to `target`.
     ///
-    /// A target that does not auto-paste returns immediately: the capture is on
-    /// the clipboard and that is the whole contract. Accessibility is never
-    /// requested on that path, which is why it is the default.
+    /// A target that does not auto-paste returns immediately: the clipboard *is*
+    /// the delivery, so nothing may expire it before the user pastes. Accessibility
+    /// is never requested on that path, which is why it is the default.
     func deliver(to target: DeliveryTarget,
                  autoSend: Bool,
                  clipboardChangeCount: Int) async throws {
         guard target.autoPaste, let bundleID = target.bundleID else {
-            clearClipboardLater(ifStillAt: clipboardChangeCount)
             return
         }
 
@@ -82,6 +81,8 @@ final class DeliveryService {
 
         if autoSend {
             try? await Task.sleep(for: pasteToSendDelay)
+            // Re-checked rather than trusted: focus can change in the 600ms since
+            // the paste, and a stray Return lands in whatever is frontmost now.
             try checkGuard(expecting: bundleID)
             postKey(CGKeyCode(kVK_Return))
             Log.paste.info("Sent")
@@ -136,8 +137,10 @@ final class DeliveryService {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// The capture may contain anything visible on screen, so it shouldn't sit on
-    /// the clipboard indefinitely. Cleared only if nothing else has written since.
+    /// Once pasted, the capture has been delivered, and it may contain anything
+    /// visible on screen — so it shouldn't linger. Cleared only if nothing else
+    /// has written since. Every `throw` above skips this, leaving a failed
+    /// delivery on the clipboard for the user to paste themselves.
     private func clearClipboardLater(ifStillAt changeCount: Int) {
         Task {
             try? await Task.sleep(for: .seconds(3))
