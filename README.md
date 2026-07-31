@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-14%2B-000000)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-F05138)](Package.swift)
-[![Tests](https://img.shields.io/badge/tests-43-brightgreen)](Tests/)
+[![Tests](https://img.shields.io/badge/tests-42-brightgreen)](Tests/)
 [![Network](https://img.shields.io/badge/network%20code-none-success)](#privacy)
 
 A free, open-source **macOS menu bar app** that captures your screen and gets
@@ -34,18 +34,18 @@ target). Framegentic:
 1. Captures your main display with ScreenCaptureKit at its native scale.
 2. Writes the image to the clipboard as PNG, marked concealed so clipboard managers and Handoff skip it.
 
-That's the whole flow for **Clipboard only**, the default: the capture is ready to paste anywhere. Pick a target that auto-pastes (Claude, today) and two more steps happen automatically:
+That's the whole flow for **Clipboard only**, the default: the menu bar icon ticks for a second to confirm, and the capture is ready to paste anywhere. Pick a target that auto-pastes (Claude, today) and two more steps happen automatically:
 
 3. Activates the target app, launching it if needed, and waits until it's actually frontmost.
 4. Pastes with a simulated `⌘V` — only after verifying the target app has focus. If anything else grabbed focus, it aborts and tells you.
 
-Sending is manual even then: review the screenshot, press Return yourself. Turn on **Send Automatically After Paste** in Settings if you want a one-keystroke flow. The clipboard is cleared a few seconds after every capture so the screenshot doesn't linger.
+Sending is manual even then: review the screenshot, press Return yourself. Turn on **Send Automatically After Paste** in Settings if you want a one-keystroke flow. Once the paste lands, the clipboard is cleared a few seconds later so the screenshot doesn't linger — unless something else has copied over it in the meantime.
 
 ## Delivery targets
 
 Where a capture goes is a setting, not a fixed behavior — pick it from **Deliver to** in Settings.
 
-**Clipboard only** is the default. Nothing gets activated and nothing gets pasted; the capture sits on the clipboard until you paste it yourself, into whatever has focus. That buys you three things:
+**Clipboard only** is the default. Nothing gets activated and nothing gets pasted; the capture sits on the clipboard until you paste it yourself, into whatever has focus. The menu bar icon flashes a tick so you know the shortcut fired. That buys you three things:
 
 - No Accessibility permission. Framegentic never asks for it unless you choose a target that pastes.
 - Works with every chat UI there is, not just the ones Framegentic knows about.
@@ -73,7 +73,8 @@ It runs as a background accessory (`LSUIElement`), so there's no Dock icon, just
 One hotkey captures your whole screen. Before you press it, know what that means:
 
 - Everything visible gets captured — passwords, messages, notifications, all of it.
-- The screenshot replaces whatever was on your clipboard. Framegentic clears it a few seconds after every capture.
+- The screenshot replaces whatever was on your clipboard.
+- How long it stays there depends on the target. With an auto-pasting one, Framegentic clears the clipboard a few seconds after a successful paste. With **Clipboard only** the capture stays until you copy something else — the clipboard is the delivery, so expiring it would throw the capture away before you could use it. And if delivery fails, it's left there deliberately, so you can paste it yourself.
 - With auto-send on, the capture is submitted the instant Return fires — for Claude, that means it reaches Anthropic's servers. There's no undo.
 
 Framegentic itself sends nothing anywhere. It has no network code — it captures, copies and, for targets that auto-paste, types.

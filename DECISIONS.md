@@ -1,5 +1,27 @@
 # Decisions
 
+## 2026-07-31 — Clipboard-only keeps the capture; the menu bar confirms it
+
+The 3-second clipboard wipe used to run on the clipboard-only path too, which
+destroyed the capture before most people could paste it — `NSPasteboard.changeCount`
+counts writes, so a user pressing ⌘V never bumped it and never cancelled the wipe.
+On that path the clipboard *is* the delivery, so the wipe is gone; it stays on the
+auto-paste path, where the capture has already been handed over. With nothing coming
+to the front to signal success, the status item now flashes a tick for a second.
+Chose the icon over a notification: no authorization to request, nothing the user
+can silently disable, no way to reintroduce the same no-feedback bug.
+
+## 2026-07-31 — Bundle ID is now com.duncansmith.framegentic
+
+The rename changed the bundle identifier, and macOS treats a new identifier as a
+different app. Screen Recording and Accessibility grants do not carry over — both
+must be granted again, followed by a quit and relaunch. The old `ClaudeShot.app`
+also stays in `/Applications` until it is deleted, and its TCC entries linger until
+`tccutil reset ScreenCapture com.duncansmith.claudeshot` (and the Accessibility
+equivalent) clear them. Accepted rather than aliased: keeping the old identifier
+to preserve grants would have kept Anthropic's trademark in the app's identity,
+which is the whole thing the rename set out to fix.
+
 ## 2026-07-31 — Shipped the rename and delivery targets
 
 Steps 1–2 of the merge design landed: the app is Framegentic, delivery is a
