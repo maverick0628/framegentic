@@ -1,5 +1,52 @@
 # Decisions
 
+## 2026-07-31 — The popover reads a snapshot of the buffer, never a live reference
+
+`CaptureService.currentFrames() -> [CapturedFrame]` is the only way anything outside that
+file touches the buffer now — `ringBuffer` went from `private(set)` to fully `private`. It
+returns `ringBuffer?.allElements() ?? []`, a plain array of `Sendable` `CapturedFrame`s, never
+the `RingBuffer` itself, which matches the reasoning already documented above `isBuffering` in
+that file (RingBuffer was never meant to cross a boundary; it has no Sendable conformance of
+its own). `RewindViewModel.refreshFrames()` calls this once, when the popover opens, and holds
+the result — not a live read re-queried on every drag. Two reasons, not one: re-querying on
+every drag event is an O(n) copy per pixel of mouse movement, and the buffer keeps recording
+underneath an open popover, so a live read would shift `clipStart`/`clipEnd`/`playhead` out
+from under a drag already in progress. A snapshot makes the scrubbed range stable for as long
+as the popover is open, by construction, not by careful timing. Matches what FrameSnap's own
+`CaptureViewModel.refreshFrames()` already did.
+
+## 2026-07-31 — RewindPopoverController follows SettingsWindowController's activation pattern, for a popover instead of a window
+
+This app is `LSUIElement` — no Dock icon, no focus by default. `SettingsWindowController`
+already solved "how does a window become key in an accessory app" with `NSApp.activate()`
+before ordering front; `RewindPopoverController` calls `NSApp.activate()` before
+`popover.show(...)`, then explicitly `.makeKey()`s the popover's window, since an accessory
+app needs both steps for a freshly-shown popover to actually take keyboard focus. The popover
+uses `NSPopover.behavior = .transient` so clicking away closes it with no extra code, and the
+SwiftUI content uses `.onExitCommand` for Escape rather than an AppKit event monitor — NSPopover
+doesn't dismiss on Escape by default, and `onExitCommand` is the SwiftUI-native hook for exactly
+this, not something the popover route needs AppKit for. Delivering (`confirmSelection()`) closes
+the popover itself, after a 1.5s pause so the toast's frame count and TTL are readable first.
+`NSPopoverDelegate.popoverDidClose` releases the frame snapshot regardless of which of the three
+paths (Escape, click-away, deliver) triggered the close, so there's one release point, not three.
+
+## 2026-07-31 — CaptureViewModel became RewindViewModel while converting off ObservableObject
+
+Renamed, not just converted — `CaptureViewModel` invited confusion next to `CaptureService`
+(unrelated concerns: one is the screen-capture pipeline, the other is UI state for a clip
+selection). `@Published`/`ObservableObject` became plain stored properties under `@Observable`,
+`@MainActor` carried over unchanged. It no longer owns a capture manager (it never needs to
+start or stop buffering — that's `SettingsModel.bufferEnabled` and `AppDelegate`'s job) or the
+`OptimizationPipeline` — those are Task 6's concern once delivery is real.
+
+## 2026-07-31 — confirmSelection() is a deliberate stub pending Task 6
+
+Per this task's brief: delivering a range is the next task, so `confirmSelection()` sets the
+copied count, shows the toast, and closes the popover — the full interaction — without writing
+anything to the clipboard. Nothing downstream depends on it doing real work yet. Flagged for the
+reviewer so a Rewind session that shows "3 frames copied" but leaves the clipboard untouched
+isn't mistaken for a bug before Task 6 lands.
+
 ## 2026-07-31 — Rewind's shortcut collision check lives in SettingsModel, not HotKeyValidator
 
 HotKeyValidator only knows the reserved-system-shortcut table; it has no notion of the

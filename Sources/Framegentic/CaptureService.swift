@@ -148,7 +148,7 @@ final class CaptureService: NSObject {
     private var samplingTask: Task<Void, Never>?
     private var latestFrame: CGImage?
     private var lastAppendedHash: UInt64?
-    private(set) var ringBuffer: RingBuffer<CapturedFrame>?
+    private var ringBuffer: RingBuffer<CapturedFrame>?
 
     private static let sampleQueue = DispatchQueue(label: "com.duncansmith.framegentic.capture-stream")
 
@@ -166,6 +166,14 @@ final class CaptureService: NSObject {
     var onBufferingStateChange: ((Bool) -> Void)?
 
     var isBuffering: Bool { state.isBuffering }
+
+    /// A snapshot, not a live handle. RingBuffer has no Sendable conformance of
+    /// its own (see the note above this section) and was never meant to leave
+    /// this file — callers get a plain array of Sendable CapturedFrames, taken
+    /// once, rather than a reference they'd have to re-read on every scrub.
+    func currentFrames() -> [CapturedFrame] {
+        ringBuffer?.allElements() ?? []
+    }
 
     /// Starts the rolling buffer, sized to `capacity` slots. `frameInterval` is the
     /// *active* sampling cadence — the same value `SettingsModel.bufferCapacity`

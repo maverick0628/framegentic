@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
     private lazy var settingsWindow = SettingsWindowController(model: model)
+    private lazy var rewindPopover = RewindPopoverController(
+        viewModel: RewindViewModel(captureService: captureService, settings: model),
+        onOpenSettings: { [weak self] in self?.openSettings() }
+    )
     private weak var captureMenuItem: NSMenuItem?
     private var isCapturing = false
     private var confirmationTask: Task<Void, Never>?
@@ -287,10 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         capture()
     }
 
-    /// Stand-in until the scrubber popover lands: proves the binding fires
-    /// independently of Snap's rather than opening anything yet.
     private func rewindHotKeyFired() {
+        guard let statusItem else { return }
         Log.hotkey.info("Rewind hotkey fired")
+        rewindPopover.toggle(relativeTo: statusItem)
     }
 
     private func capture() {
