@@ -409,11 +409,4 @@ final class DeliveryTargetTests: XCTestCase {
     func testIdsAreUnique() {
         XCTAssertEqual(Set(TargetRegistry.all.map(\.id)).count, TargetRegistry.all.count)
     }
-
-    func testRoundTripsThroughCodable() throws {
-        let decoded = try JSONDecoder().decode(
-            DeliveryTarget.self,
-            from: JSONEncoder().encode(DeliveryTarget.clipboardOnly))
-        XCTAssertEqual(decoded, DeliveryTarget.clipboardOnly)
-    }
 }

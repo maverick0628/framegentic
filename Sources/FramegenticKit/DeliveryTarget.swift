@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a capture goes after it reaches the clipboard.
-public struct DeliveryTarget: Identifiable, Equatable, Sendable, Codable {
+public struct DeliveryTarget: Identifiable, Equatable, Sendable {
     public let id: String
     public let displayName: String
     /// nil for clipboard-only, which activates nothing.
