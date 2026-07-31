@@ -22,9 +22,9 @@ let borderPath = CGPath(roundedRect: insetRect, cornerWidth: 226, cornerHeight: 
 ctx.addPath(borderPath)
 ctx.strokePath()
 
-// Viewfinder brackets - Claude terracotta (#D97757)
-let orange = CGColor(red: 0.85, green: 0.47, blue: 0.34, alpha: 1.0)
-ctx.setStrokeColor(orange)
+// Viewfinder brackets - Framegentic cyan (#4FC9D9)
+let accent = CGColor(red: 0.31, green: 0.79, blue: 0.85, alpha: 1.0)
+ctx.setStrokeColor(accent)
 ctx.setLineCap(.round)
 ctx.setLineWidth(48)
 
@@ -58,7 +58,7 @@ ctx.addLine(to: CGPoint(x: cx - boxHalf, y: cy - boxHalf + cornerLen))
 ctx.strokePath()
 
 // Center dot
-ctx.setFillColor(orange)
+ctx.setFillColor(accent)
 let dotRadius: CGFloat = 36
 ctx.fillEllipse(in: CGRect(x: cx - dotRadius, y: cy - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
 
