@@ -1,5 +1,6 @@
 import XCTest
 import Carbon.HIToolbox
+import CoreGraphics
 @testable import FramegenticKit
 
 final class CaptureGeometryTests: XCTestCase {
@@ -408,5 +409,339 @@ final class DeliveryTargetTests: XCTestCase {
 
     func testIdsAreUnique() {
         XCTAssertEqual(Set(TargetRegistry.all.map(\.id)).count, TargetRegistry.all.count)
+    }
+}
+
+final class RingBufferTests: XCTestCase {
+    func testAppendAndRetrieve() {
+        var buffer = RingBuffer<Int>(capacity: 3)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.append(3)
+        XCTAssertEqual(buffer.count, 3)
+        XCTAssertEqual(buffer.allElements(), [1, 2, 3])
+    }
+
+    func testOverflowDropsOldest() {
+        var buffer = RingBuffer<Int>(capacity: 3)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.append(3)
+        buffer.append(4)
+        XCTAssertEqual(buffer.count, 3)
+        XCTAssertEqual(buffer.allElements(), [2, 3, 4])
+    }
+
+    func testEmptyBuffer() {
+        let buffer = RingBuffer<Int>(capacity: 5)
+        XCTAssertEqual(buffer.count, 0)
+        XCTAssertTrue(buffer.allElements().isEmpty)
+    }
+
+    func testSingleCapacity() {
+        var buffer = RingBuffer<Int>(capacity: 1)
+        buffer.append(10)
+        XCTAssertEqual(buffer.allElements(), [10])
+        buffer.append(20)
+        XCTAssertEqual(buffer.allElements(), [20])
+    }
+
+    func testClear() {
+        var buffer = RingBuffer<Int>(capacity: 5)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.clear()
+        XCTAssertEqual(buffer.count, 0)
+        XCTAssertTrue(buffer.allElements().isEmpty)
+    }
+
+    func testSlice() {
+        var buffer = RingBuffer<Int>(capacity: 10)
+        for i in 0..<7 { buffer.append(i) }
+        let slice = buffer.slice(from: 2, to: 5)
+        XCTAssertEqual(slice, [2, 3, 4])
+    }
+
+    func testSliceAfterWrap() {
+        var buffer = RingBuffer<Int>(capacity: 4)
+        for i in 0..<6 { buffer.append(i) }
+        let all = buffer.allElements()
+        XCTAssertEqual(all, [2, 3, 4, 5])
+        let slice = buffer.slice(from: 1, to: 3)
+        XCTAssertEqual(slice, [3, 4])
+    }
+}
+
+final class DHashTests: XCTestCase {
+    private func makeImage(width: Int, height: Int, color: (UInt8, UInt8, UInt8)) throws -> CGImage {
+        let bitsPerComponent = 8
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[i]     = color.0
+            pixels[i + 1] = color.1
+            pixels[i + 2] = color.2
+            pixels[i + 3] = 255
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: bitsPerComponent, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testIdenticalImagesHaveZeroDistance() throws {
+        let img = try makeImage(width: 100, height: 100, color: (128, 128, 128))
+        let hash1 = DHash.hash(img)
+        let hash2 = DHash.hash(img)
+        XCTAssertEqual(DHash.hammingDistance(hash1, hash2), 0)
+    }
+
+    private func makeGradientImage(width: Int, height: Int, ascending: Bool) throws -> CGImage {
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let t = Float(col) / Float(width - 1)
+                let intensity = UInt8(ascending ? t * 255 : (1 - t) * 255)
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDifferentImagesHaveNonZeroDistance() throws {
+        let img1 = try makeGradientImage(width: 100, height: 100, ascending: true)
+        let img2 = try makeGradientImage(width: 100, height: 100, ascending: false)
+        let hash1 = DHash.hash(img1)
+        let hash2 = DHash.hash(img2)
+        XCTAssertGreaterThan(DHash.hammingDistance(hash1, hash2), 0)
+    }
+
+    func testSimilarityAboveThreshold() throws {
+        let img = try makeImage(width: 100, height: 100, color: (100, 100, 100))
+        let hash1 = DHash.hash(img)
+        let hash2 = DHash.hash(img)
+        XCTAssertTrue(DHash.areSimilar(hash1, hash2, threshold: 0.9))
+    }
+
+    func testHashIs64Bits() throws {
+        let img = try makeImage(width: 200, height: 200, color: (50, 100, 150))
+        // Erased to Any so the check is a real runtime test, not a tautology
+        // the compiler can already prove from hash's static UInt64 return type.
+        let hash: Any = DHash.hash(img)
+        XCTAssertTrue(hash is UInt64)
+    }
+}
+
+final class ImageProcessorTests: XCTestCase {
+    private func makeImage(width: Int, height: Int) throws -> CGImage {
+        var pixels = [UInt8](repeating: 128, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDownsampleReducesWidth() throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let result = ImageProcessor.downsample(img, maxWidth: 1024)
+        XCTAssertEqual(result.width, 1024)
+        XCTAssertEqual(result.height, 640)
+    }
+
+    func testDownsampleSkipsSmallImages() throws {
+        let img = try makeImage(width: 800, height: 600)
+        let result = ImageProcessor.downsample(img, maxWidth: 1024)
+        XCTAssertEqual(result.width, 800)
+        XCTAssertEqual(result.height, 600)
+    }
+
+    func testJPEGEncodeProducesData() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let data = try XCTUnwrap(ImageProcessor.encodeJPEG(img, quality: 0.75))
+        XCTAssertGreaterThan(data.count, 0)
+    }
+
+    func testJPEGDataStartsWithFFD8() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let data = try XCTUnwrap(ImageProcessor.encodeJPEG(img, quality: 0.75))
+        XCTAssertEqual(data[0], 0xFF)
+        XCTAssertEqual(data[1], 0xD8)
+    }
+}
+
+@MainActor
+final class OptimizationPipelineTests: XCTestCase {
+    private func makeImage(width: Int, height: Int, brightness: UInt8 = 128) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[i]     = brightness
+            pixels[i + 1] = brightness
+            pixels[i + 2] = brightness
+            pixels[i + 3] = 255
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeGradientImage(width: Int, height: Int, ascending: Bool) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let t = Float(col) / Float(width - 1)
+                let intensity = UInt8(ascending ? t * 255 : (1 - t) * 255)
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeCheckerboardImage(width: Int, height: Int) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let intensity: UInt8 = (col % 2 == 0) ? 255 : 0
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDedupRemovesDuplicateFrames() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let frames = (0..<5).map { _ in CapturedFrame(image: img) }
+        let deduped = OptimizationPipeline.dedup(frames, threshold: 0.9)
+        XCTAssertEqual(deduped.count, 2, "Should keep only first and last of identical frames")
+    }
+
+    func testDedupKeepsDifferentFrames() throws {
+        let frames = [
+            CapturedFrame(image: try makeGradientImage(width: 100, height: 100, ascending: true)),
+            CapturedFrame(image: try makeCheckerboardImage(width: 100, height: 100)),
+            CapturedFrame(image: try makeGradientImage(width: 100, height: 100, ascending: false)),
+        ]
+        let deduped = OptimizationPipeline.dedup(frames, threshold: 0.9)
+        XCTAssertEqual(deduped.count, 3)
+    }
+
+    func testProcessProducesFileURLs() throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let frames = [
+            CapturedFrame(image: img),
+            CapturedFrame(image: try makeImage(width: 2560, height: 1600, brightness: 50)),
+        ]
+        let pipeline = OptimizationPipeline()
+        let urls = pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        XCTAssertEqual(urls.count, 2)
+        for url in urls {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            let data = try Data(contentsOf: url)
+            XCTAssertEqual(data[0], 0xFF)
+            XCTAssertEqual(data[1], 0xD8)
+        }
+        pipeline.cleanup()
+    }
+
+    func testProcessDownsamples() throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let frames = [CapturedFrame(image: img)]
+        let pipeline = OptimizationPipeline()
+        let urls = pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        pipeline.cleanup()
+        XCTAssertFalse(urls.isEmpty)
+    }
+}
+
+// XCTestCase's setUp()/tearDown() are nonisolated (inherited from an
+// Objective-C base), so bridging them to a @MainActor fixture via the async
+// overrides just trades one warning for another (super's no-op body has
+// nothing to suspend on). A manager per test plus defer sidesteps the
+// override entirely and needs no isolation bridging.
+@MainActor
+final class TempFileManagerTests: XCTestCase {
+    func testWriteCreatesFile() throws {
+        let manager = TempFileManager()
+        defer { manager.cleanupAll() }
+        let data = Data("test".utf8)
+        let url = try manager.write(data, filename: "test.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testWriteCreatesSessionDirectory() throws {
+        let manager = TempFileManager()
+        defer { manager.cleanupAll() }
+        let data = Data("test".utf8)
+        let url = try manager.write(data, filename: "test.jpg")
+        let sessionDir = url.deletingLastPathComponent()
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sessionDir.path, isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue)
+    }
+
+    func testWriteMultipleFiles() throws {
+        let manager = TempFileManager()
+        defer { manager.cleanupAll() }
+        let url1 = try manager.write(Data("a".utf8), filename: "frame-0.jpg")
+        let url2 = try manager.write(Data("b".utf8), filename: "frame-1.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url1.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url2.path))
+        XCTAssertEqual(url1.deletingLastPathComponent(), url2.deletingLastPathComponent())
+    }
+
+    func testCleanupAllRemovesFiles() throws {
+        let manager = TempFileManager()
+        let url = try manager.write(Data("x".utf8), filename: "test.jpg")
+        manager.cleanupAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testSessionDirectoryInTmpDir() throws {
+        let manager = TempFileManager()
+        defer { manager.cleanupAll() }
+        let url = try manager.write(Data("x".utf8), filename: "test.jpg")
+        let tmpDir = FileManager.default.temporaryDirectory.path
+        XCTAssertTrue(url.path.hasPrefix(tmpDir))
+        XCTAssertTrue(url.path.contains("framesnap"))
     }
 }
