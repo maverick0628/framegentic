@@ -124,6 +124,25 @@ final class CaptureService: NSObject {
     // into a `Task { @MainActor in }` hop. CapturedFrame itself is constructed
     // only on MainActor, at the moment a sampled frame is kept.
 
+    /// A start takes real time — a display has to be resolved and a stream has to
+    /// come up — so "is it buffering" has three answers, not two, and anything
+    /// reading it mid-transition (the menu bar, chiefly) has to be told the
+    /// honest one rather than an optimistic guess a failed start would leave
+    /// permanently wrong.
+    private enum BufferingState {
+        case idle, starting, running, stopping
+
+        var isBuffering: Bool { self == .running }
+    }
+
+    private var state: BufferingState = .idle {
+        didSet {
+            guard oldValue.isBuffering != state.isBuffering else { return }
+            onBufferingStateChange?(state.isBuffering)
+        }
+    }
+    private var transition: Task<Void, Never>?
+
     private var stream: SCStream?
     private let activityMonitor = ActivityMonitor()
     private var samplingTask: Task<Void, Never>?
@@ -133,7 +152,20 @@ final class CaptureService: NSObject {
 
     private static let sampleQueue = DispatchQueue(label: "com.duncansmith.framegentic.capture-stream")
 
-    var isBuffering: Bool { stream != nil }
+    // Building a CIContext allocates a GPU render pipeline; one per delivered
+    // frame is pure overhead. Shared rather than per-callback — it is documented
+    // thread-safe, and the only reader is the stream's own serial queue anyway.
+    // nonisolated because that reader is the stream callback, off MainActor.
+    private nonisolated static let renderContext = CIContext()
+
+    /// Fires whenever buffering genuinely starts or stops — including when the
+    /// stream dies underneath us. A caller that only refreshed its indicator
+    /// after its own start/stop returned would keep claiming to record after a
+    /// display unplug, a revoked permission or a fast user switch killed the
+    /// stream, which is precisely the lie the indicator exists to prevent.
+    var onBufferingStateChange: ((Bool) -> Void)?
+
+    var isBuffering: Bool { state.isBuffering }
 
     /// Starts the rolling buffer, sized to `capacity` slots. `frameInterval` is the
     /// *active* sampling cadence — the same value `SettingsModel.bufferCapacity`
@@ -146,48 +178,72 @@ final class CaptureService: NSObject {
     /// one-shot path handles it — resolveDisplay() throws, this logs and leaves
     /// buffering off, nothing crashes or retries in a loop.
     func startBuffering(capacity: Int, frameInterval: TimeInterval) async {
-        guard stream == nil else { return }
-
-        do {
-            let display = try await resolveDisplay()
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-
-            // Point (1x) dimensions, not the one-shot path's pixel-scaled
-            // geometry: a rolling buffer of raw decoded CGImages is memory that
-            // sits around for the whole buffer window, so it stays cheap here
-            // and pays for quality only once, at delivery, when OptimizationPipeline
-            // downsamples and compresses whatever gets kept.
-            let config = SCStreamConfiguration()
-            config.width = display.width
-            config.height = display.height
-            // Caps the underlying stream's raw delivery rate, decoupled from
-            // frameInterval on purpose — this just keeps latestFrame reasonably
-            // fresh between samples; how often a sample is actually kept is the
-            // sampling loop's job, below.
-            config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-            config.pixelFormat = kCVPixelFormatType_32BGRA
-            config.showsCursor = false
-
-            let newStream = SCStream(filter: filter, configuration: config, delegate: self)
-            try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: Self.sampleQueue)
-            try await newStream.startCapture()
-            stream = newStream
-        } catch {
-            Log.capture.error("Continuous capture failed to start: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-
-        ringBuffer = RingBuffer<CapturedFrame>(capacity: capacity)
-        lastAppendedHash = nil
-        latestFrame = nil
-        activityMonitor.start()
-        startSamplingLoop(activeInterval: frameInterval, idleInterval: frameInterval * 3)
+        await serialised { await self.performStart(capacity: capacity, frameInterval: frameInterval) }
     }
 
     /// Safe to call whether or not buffering is running. Clears the buffer along
     /// with the stream — Rewind's contents are a live recording, not a saved
     /// document, so there is nothing to preserve across a stop.
     func stopBuffering() async {
+        await serialised { await self.performStop() }
+    }
+
+    /// Every start and stop runs through here, one at a time, in the order it was
+    /// asked for. The service owns this rather than trusting its caller to: a
+    /// start suspends twice before it has a `stream` to guard against, and the
+    /// stream's own failure callback is a caller too. Without this, a stop
+    /// arriving during those suspensions is a no-op that the resuming start then
+    /// overwrites with a live stream nobody asked for — `isBuffering` true
+    /// forever, every later start refused.
+    ///
+    /// Ordering holds because `transition` is read and reassigned with no await
+    /// in between, so the chain is fixed at call time rather than at whatever
+    /// order the executor happens to schedule the tasks in.
+    private func serialised(_ work: @escaping @MainActor () async -> Void) async {
+        let previous = transition
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        transition = task
+        await task.value
+    }
+
+    private func performStart(capacity: Int, frameInterval: TimeInterval) async {
+        guard state == .idle else { return }
+        state = .starting
+
+        let newStream: SCStream
+        do {
+            let display = try await resolveDisplay()
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let candidate = SCStream(
+                filter: filter,
+                configuration: Self.bufferConfiguration(display: display, frameInterval: frameInterval),
+                delegate: self
+            )
+            try candidate.addStreamOutput(self, type: .screen, sampleHandlerQueue: Self.sampleQueue)
+            try await candidate.startCapture()
+            newStream = candidate
+        } catch {
+            Log.capture.error("Continuous capture failed to start: \(error.localizedDescription, privacy: .public)")
+            state = .idle
+            return
+        }
+
+        stream = newStream
+        ringBuffer = RingBuffer<CapturedFrame>(capacity: capacity)
+        lastAppendedHash = nil
+        latestFrame = nil
+        activityMonitor.start()
+        state = .running
+        startSamplingLoop(activeInterval: frameInterval, idleInterval: frameInterval * 3)
+    }
+
+    private func performStop() async {
+        guard state != .idle else { return }
+        state = .stopping
+
         samplingTask?.cancel()
         samplingTask = nil
         activityMonitor.stop()
@@ -198,15 +254,56 @@ final class CaptureService: NSObject {
         let stoppingStream = stream
         stream = nil
         try? await stoppingStream?.stopCapture()
+        state = .idle
+    }
+
+    /// Point (1x) dimensions, not the one-shot path's pixel-scaled geometry: a
+    /// rolling buffer of raw decoded CGImages is memory that sits around for the
+    /// whole buffer window, so it stays cheap here and pays for quality only
+    /// once, at delivery, when OptimizationPipeline downsamples and compresses
+    /// whatever gets kept.
+    ///
+    /// `minimumFrameInterval` is the sampling cadence rather than a fixed 1 fps.
+    /// The sampling loop keeps one frame per interval and nothing reads the rest,
+    /// so every frame delivered faster than that is a full-screen decode and
+    /// colour conversion computed only to be dropped — on the one feature whose
+    /// whole case is being cheap enough to leave running.
+    private static func bufferConfiguration(display: SCDisplay, frameInterval: TimeInterval) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.width = display.width
+        config.height = display.height
+        config.minimumFrameInterval = CMTime(seconds: frameInterval, preferredTimescale: 600)
+        config.pixelFormat = kCVPixelFormatType_32BGRA
+        config.showsCursor = false
+        return config
+    }
+
+    /// The idle backoff has to reach the stream, not just the sampling loop.
+    /// Leaving delivery pinned at the active rate while sampling drops to a third
+    /// of it means two of every three frames are decoded overnight for nothing.
+    private func applyDeliveryRate(_ interval: TimeInterval) async {
+        guard let stream, let display = cachedDisplay else { return }
+        do {
+            try await stream.updateConfiguration(
+                Self.bufferConfiguration(display: display, frameInterval: interval)
+            )
+        } catch {
+            Log.capture.error("Could not retune stream delivery rate: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func startSamplingLoop(activeInterval: TimeInterval, idleInterval: TimeInterval) {
         samplingTask?.cancel()
         samplingTask = Task { [weak self] in
+            var deliveredInterval = activeInterval
             while !Task.isCancelled {
                 guard let self else { return }
                 self.sampleFrame()
                 let interval = self.activityMonitor.currentState == .active ? activeInterval : idleInterval
+                if interval != deliveredInterval {
+                    deliveredInterval = interval
+                    await self.applyDeliveryRate(interval)
+                }
                 do {
                     try await Task.sleep(for: .seconds(interval))
                 } catch {
@@ -235,16 +332,37 @@ extension CaptureService: SCStreamDelegate, SCStreamOutput {
     // faster than anything here consumes them, so decoding happens off the main
     // actor and only the decoded, Sendable CGImage crosses into it.
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, let imageBuffer = sampleBuffer.imageBuffer else { return }
+        guard type == .screen,
+              Self.carriesNewPixels(sampleBuffer),
+              let imageBuffer = sampleBuffer.imageBuffer else { return }
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let cgImage = CIContext().createCGImage(ciImage, from: ciImage.extent) else { return }
+        guard let cgImage = Self.renderContext.createCGImage(ciImage, from: ciImage.extent) else { return }
         Task { @MainActor [weak self] in
             self?.latestFrame = cgImage
         }
     }
 
+    /// ScreenCaptureKit tags every delivered frame: `.complete` carries new
+    /// pixels, while `.idle`, `.blank` and `.suspended` carry a stale or empty
+    /// buffer that exists only to keep the stream alive. Dedup would drop most of
+    /// those, but storing a blank frame once is still storing a blank frame.
+    ///
+    /// A frame the SDK declines to describe at all is let through — this gate is
+    /// here to drop what SCK explicitly marks unusable, not to make delivery
+    /// depend on metadata a future SDK might stop attaching.
+    private nonisolated static func carriesNewPixels(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+                as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              let status = SCFrameStatus(rawValue: rawStatus) else { return true }
+        return status == .complete
+    }
+
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Log.capture.error("Continuous capture stream stopped: \(error.localizedDescription, privacy: .public)")
+        // Goes through the same serialised transition as every other stop, so it
+        // cannot interleave with a start still coming up, and it moves the state
+        // machine — which is what drives the menu bar back to the truth.
         Task { @MainActor [weak self] in
             await self?.stopBuffering()
         }

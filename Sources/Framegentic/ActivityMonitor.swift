@@ -40,7 +40,14 @@ final class ActivityMonitor {
             eventsOfInterest: eventMask,
             callback: callback,
             userInfo: refcon
-        ) else { return }
+        ) else {
+            // Input Monitoring is a separate grant from Screen Recording, so this
+            // fails on machines where Rewind otherwise works fine. Buffering still
+            // runs, permanently at the idle cadence — which looks exactly like a
+            // broken backoff unless the log says otherwise.
+            Log.capture.error("Activity monitoring unavailable — capture stays at the idle cadence (Input Monitoring not granted?)")
+            return
+        }
 
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)

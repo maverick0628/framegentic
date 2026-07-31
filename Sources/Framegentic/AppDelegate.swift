@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isCapturing = false
     private var confirmationTask: Task<Void, Never>?
     private var isShowingConfirmation = false
+    private var confirmationGeneration = 0
     private var bufferingTransition: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,6 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         model.onBufferEnabledChange = { [weak self] enabled in
             self?.setBuffering(enabled)
+        }
+        // Not only after our own start/stop: a stream that dies on its own —
+        // display unplugged, permission revoked, fast user switch — has to move
+        // the menu bar too, or the app goes on claiming to record after it stopped.
+        captureService.onBufferingStateChange = { [weak self] _ in
+            self?.refreshStatusIcon()
         }
         captureService.prewarm()
         if model.bufferEnabled {
@@ -46,13 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Chained after whatever transition is already in flight, rather than fired
-    /// independently — CaptureService.startBuffering only guards against a second
-    /// start once `stream` is actually set, so two toggles in quick succession
-    /// (settings bounced on/off before the first finishes resolving a display)
-    /// could otherwise start two streams and leak one, or race a stop against a
-    /// start still coming up. Chaining makes every transition run to completion
-    /// in request order before the next one begins, so neither can happen.
+    /// Chained rather than fired independently. CaptureService serialises its own
+    /// transitions now, so this is no longer what makes them safe — it fixes their
+    /// *order*. Two toggles in quick succession create two tasks, and nothing
+    /// promises the executor runs them in the order they were made; reading and
+    /// reassigning `bufferingTransition` with no await in between pins the order
+    /// at the moment the user clicked.
     private func setBuffering(_ enabled: Bool) {
         let previous = bufferingTransition
         bufferingTransition = Task { [weak self] in
@@ -138,15 +144,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// icon a second later rather than the one true when it fired.
     private func flashCaptureConfirmation() {
         confirmationTask?.cancel()
+        confirmationGeneration &+= 1
+        let generation = confirmationGeneration
         isShowingConfirmation = true
         statusItem?.button?.image = Self.confirmationIcon()
         confirmationTask = Task { [weak self] in
+            // Released on every exit, cancelled or not, so a future cancel site
+            // can't strand the flag and wedge refreshStatusIcon() off for good.
+            // Guarded on the generation because a cancel here means a newer flash
+            // already claimed the indicator — clearing its flag would let a
+            // buffering transition paint over a tick that is still on screen.
+            defer {
+                if let self, self.confirmationGeneration == generation {
+                    self.isShowingConfirmation = false
+                }
+            }
             do {
                 try await Task.sleep(for: .seconds(1))
             } catch {
                 return
             }
-            self?.isShowingConfirmation = false
             self?.statusItem?.button?.image = self?.currentIdleIcon()
         }
     }
