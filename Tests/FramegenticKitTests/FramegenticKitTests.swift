@@ -37,29 +37,50 @@ final class DisplaySelectionTests: XCTestCase {
     }
 }
 
-final class ClaudeLocatorTests: XCTestCase {
-    func testResolvesClaudeByBundleIDNotName() {
+final class AppLocatorTests: XCTestCase {
+    private let claude = "com.anthropic.claudefordesktop"
+
+    func testResolvesByBundleIDNotName() {
         let apps = [
             RunningAppInfo(bundleID: "com.evil.claude", localizedName: "Claude"),
-            RunningAppInfo(bundleID: ClaudeLocator.bundleID, localizedName: "Claude Beta")
+            RunningAppInfo(bundleID: claude, localizedName: "Claude Beta")
         ]
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: apps, installedAppURL: nil),
-                       .activateRunning)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: apps, installedAppURL: nil),
+            .activateRunning)
 
         let impostorOnly = [RunningAppInfo(bundleID: "com.evil.claude", localizedName: "Claude")]
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: impostorOnly, installedAppURL: nil),
-                       .notFound)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: impostorOnly, installedAppURL: nil),
+            .notFound)
     }
 
     func testFallsBackToInstalledURLThenNotFound() {
-        let url = URL(fileURLWithPath: "/Users/me/Applications/Claude.app")
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: [], installedAppURL: url), .launch(url))
-        XCTAssertEqual(ClaudeLocator.resolve(runningApps: [], installedAppURL: nil), .notFound)
+        let url = URL(fileURLWithPath: "/Applications/Claude.app")
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: [], installedAppURL: url),
+            .launch(url))
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: [], installedAppURL: nil),
+            .notFound)
+    }
+
+    // The generalisation is the point of this type: it must work for a target
+    // that is not Claude, which every assertion above happens to use.
+    func testResolvesANonClaudeTarget() {
+        let cursor = "com.todesktop.230313mzl4w4u92"
+        let apps = [RunningAppInfo(bundleID: cursor, localizedName: "Cursor")]
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: cursor, runningApps: apps, installedAppURL: nil),
+            .activateRunning)
+        XCTAssertEqual(
+            AppLocator.resolve(bundleID: claude, runningApps: apps, installedAppURL: nil),
+            .notFound)
     }
 }
 
 final class PasteGuardTests: XCTestCase {
-    private let claude = ClaudeLocator.bundleID
+    private let claude = "com.anthropic.claudefordesktop"
 
     func testPasteAllowedOnlyWhenClaudeFrontmostAndTrusted() {
         XCTAssertEqual(
@@ -80,6 +101,16 @@ final class PasteGuardTests: XCTestCase {
         XCTAssertEqual(
             PasteGuard.evaluate(frontmostBundleID: claude, expectedBundleID: claude, axTrusted: false),
             .blocked(.accessibilityDenied))
+    }
+
+    func testGuardsAnyExpectedBundleIDNotJustClaude() {
+        let cursor = "com.todesktop.230313mzl4w4u92"
+        XCTAssertEqual(
+            PasteGuard.evaluate(frontmostBundleID: cursor, expectedBundleID: cursor, axTrusted: true),
+            .allowed)
+        XCTAssertEqual(
+            PasteGuard.evaluate(frontmostBundleID: claude, expectedBundleID: cursor, axTrusted: true),
+            .blocked(.wrongFrontmostApp(actual: claude)))
     }
 }
 

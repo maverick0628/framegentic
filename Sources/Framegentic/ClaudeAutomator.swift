@@ -29,6 +29,8 @@ final class ClaudeAutomator {
     private let pasteToSendDelay: Duration = .milliseconds(600)
     private let warmActivationTimeout: TimeInterval = 3
     private let coldLaunchTimeout: TimeInterval = 10
+    // Task 4 replaces this file with real target selection; this keeps it compiling.
+    private let target = TargetRegistry.target(id: "claude") ?? .clipboardOnly
 
     /// Activates (or launches) Claude, waits until it is actually frontmost, then
     /// pastes. The Return keystroke only fires when `autoSend` is on, and every
@@ -43,13 +45,13 @@ final class ClaudeAutomator {
             RunningAppInfo(bundleID: $0.bundleIdentifier, localizedName: $0.localizedName)
         }
         let installedURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: ClaudeLocator.bundleID
+            withBundleIdentifier: target.bundleID ?? ""
         )
 
         let timeout: TimeInterval
-        switch ClaudeLocator.resolve(runningApps: runningApps, installedAppURL: installedURL) {
+        switch AppLocator.resolve(bundleID: target.bundleID ?? "", runningApps: runningApps, installedAppURL: installedURL) {
         case .activateRunning:
-            NSRunningApplication.runningApplications(withBundleIdentifier: ClaudeLocator.bundleID)
+            NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleID ?? "")
                 .first?
                 .activate()
             timeout = warmActivationTimeout
@@ -92,13 +94,13 @@ final class ClaudeAutomator {
     }
 
     private var claudeIsFrontmost: Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ClaudeLocator.bundleID
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == target.bundleID ?? ""
     }
 
     private func checkGuard() throws {
         let decision = PasteGuard.evaluate(
             frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            expectedBundleID: ClaudeLocator.bundleID,
+            expectedBundleID: target.bundleID ?? "",
             axTrusted: AXIsProcessTrusted()
         )
         switch decision {
