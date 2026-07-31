@@ -8,6 +8,10 @@ import FramegenticKit
 final class SettingsModel {
     private static let autoSendKey = "AutoSendAfterPaste"
     private static let deliveryTargetKey = "DeliveryTargetID"
+    private static let bufferEnabledKey = "BufferEnabled"
+    private static let bufferWindowKey = "BufferWindowSeconds"
+    private static let frameIntervalKey = "FrameIntervalSeconds"
+    private static let autoDeleteTTLKey = "AutoDeleteTTLSeconds"
 
     private let store: HotKeyStore
     private let hotKey: HotKeyManager
@@ -26,6 +30,28 @@ final class SettingsModel {
         didSet { UserDefaults.standard.set(deliveryTarget.id, forKey: Self.deliveryTargetKey) }
     }
 
+    /// Off by default: an always-on screen recorder is not something to opt a
+    /// user out of. Snap works without it; enabling Rewind is what starts it.
+    var bufferEnabled: Bool {
+        didSet { UserDefaults.standard.set(bufferEnabled, forKey: Self.bufferEnabledKey) }
+    }
+
+    var bufferWindowSeconds: Int {
+        didSet { UserDefaults.standard.set(bufferWindowSeconds, forKey: Self.bufferWindowKey) }
+    }
+
+    var frameIntervalSeconds: Double {
+        didSet { UserDefaults.standard.set(frameIntervalSeconds, forKey: Self.frameIntervalKey) }
+    }
+
+    var autoDeleteTTLSeconds: Int {
+        didSet { UserDefaults.standard.set(autoDeleteTTLSeconds, forKey: Self.autoDeleteTTLKey) }
+    }
+
+    var bufferCapacity: Int {
+        max(1, Int(Double(bufferWindowSeconds) / max(frameIntervalSeconds, 0.1)))
+    }
+
     var onRecordingStateChange: ((Bool) -> Void)?
 
     init(store: HotKeyStore, hotKey: HotKeyManager) {
@@ -36,6 +62,20 @@ final class SettingsModel {
 
         let storedID = UserDefaults.standard.string(forKey: Self.deliveryTargetKey)
         self.deliveryTarget = storedID.flatMap(TargetRegistry.target(id:)) ?? TargetRegistry.defaultTarget
+
+        // Values match FrameSnap's AppSettings.swift registered defaults (120s window,
+        // 10s interval, 300s TTL). bufferEnabled has no such fallback on purpose: an
+        // unset key must read false, not whatever true/false FrameSnap shipped with.
+        let storedBufferWindow = UserDefaults.standard.object(forKey: Self.bufferWindowKey) as? Int
+        self.bufferWindowSeconds = storedBufferWindow ?? 120
+
+        let storedFrameInterval = UserDefaults.standard.object(forKey: Self.frameIntervalKey) as? Double
+        self.frameIntervalSeconds = storedFrameInterval ?? 10.0
+
+        let storedAutoDeleteTTL = UserDefaults.standard.object(forKey: Self.autoDeleteTTLKey) as? Int
+        self.autoDeleteTTLSeconds = storedAutoDeleteTTL ?? 300
+
+        self.bufferEnabled = UserDefaults.standard.bool(forKey: Self.bufferEnabledKey)
     }
 
     var canResetToDefault: Bool { hotKeyConfig != .default }

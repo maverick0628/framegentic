@@ -73,6 +73,30 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Rewind")
+                    .font(.headline)
+
+                Toggle("Enable Rewind", isOn: $model.bufferEnabled)
+
+                Text("Turning this on starts continuously capturing your screen into memory, so you can scrub back through the last few minutes. Frames stay in memory only — nothing touches disk until you deliver one.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.bufferEnabled {
+                    Picker("Buffer duration", selection: $model.bufferWindowSeconds) {
+                        Text("1 min").tag(60)
+                        Text("2 min").tag(120)
+                        Text("3 min").tag(180)
+                        Text("5 min").tag(300)
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
         }
         .padding(20)
         .frame(width: 380)
