@@ -153,10 +153,27 @@ final class CaptureService: NSObject {
     private static let sampleQueue = DispatchQueue(label: "com.duncansmith.framegentic.capture-stream")
 
     // Building a CIContext allocates a GPU render pipeline; one per delivered
-    // frame is pure overhead. Shared rather than per-callback — it is documented
-    // thread-safe, and the only reader is the stream's own serial queue anyway.
-    // nonisolated because that reader is the stream callback, off MainActor.
-    private nonisolated static let renderContext = CIContext()
+    // frame is pure overhead. Shared rather than per-callback — Apple documents
+    // the class as thread-safe, and the only reader is the stream's own serial
+    // queue anyway. nonisolated because that reader is the stream callback, off
+    // MainActor.
+    //
+    // The box is here because whether CIContext is Sendable is a fact about the
+    // SDK rather than about the type: recent SDKs annotate it, the macOS 15 SDK
+    // the CI runner builds against does not, and this file has to compile clean
+    // against both. `nonisolated(unsafe)` satisfies the old SDK, but the new one
+    // then flags it as redundant, so neither bare spelling works everywhere.
+    // Asserting the conformance once reads the same on either: the documented
+    // thread-safety is the guarantee being leaned on, and `@unchecked` records
+    // that the compiler is taking it on trust rather than checking it. A
+    // `@preconcurrency import CoreImage` would also silence it, by dropping
+    // Sendable checking on everything CoreImage exports — a far wider claim than
+    // the one actually reasoned about here.
+    private struct RenderContext: @unchecked Sendable {
+        let ci = CIContext()
+    }
+
+    private nonisolated static let renderContext = RenderContext()
 
     /// Fires whenever buffering genuinely starts or stops — including when the
     /// stream dies underneath us. A caller that only refreshed its indicator
@@ -366,7 +383,7 @@ extension CaptureService: SCStreamDelegate, SCStreamOutput {
               Self.carriesNewPixels(sampleBuffer),
               let imageBuffer = sampleBuffer.imageBuffer else { return }
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let cgImage = Self.renderContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+        guard let cgImage = Self.renderContext.ci.createCGImage(ciImage, from: ciImage.extent) else { return }
         Task { @MainActor [weak self] in
             self?.latestFrame = cgImage
         }

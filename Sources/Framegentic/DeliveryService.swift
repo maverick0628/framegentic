@@ -56,7 +56,16 @@ final class DeliveryService {
     /// Runs `body` as the app's one in-flight delivery, or refuses. `defer`
     /// releases the claim on every exit, thrown or returned, so a failed
     /// delivery cannot wedge every later one shut.
-    private func claimingDelivery<T>(_ body: () async throws -> T) async throws -> T {
+    ///
+    /// `body` is `@MainActor` because every delivery it wraps already is — the
+    /// pasteboard write, the pipeline, the claim flag itself. Left unannotated
+    /// the parameter type reads as nonisolated no matter what gets passed to it,
+    /// so a compiler applying the stricter rule treats the call as leaving the
+    /// actor and then refuses to carry a non-Sendable `T` back across. Naming
+    /// the isolation the closure already runs at means nothing crosses a
+    /// boundary, which is both why `T` needs no constraint and why there is no
+    /// hop here to pay for.
+    private func claimingDelivery<T>(_ body: @MainActor () async throws -> T) async throws -> T {
         guard !deliveryInFlight else { throw DeliveryError.deliveryInProgress }
         deliveryInFlight = true
         defer { deliveryInFlight = false }

@@ -1,5 +1,30 @@
 # Decisions
 
+## 2026-07-31 — Concurrency annotations state their reasoning in-place, not per-SDK
+
+The branch built clean here and failed to compile on the runner, for the second time on this
+project after ScreenCaptureKit. Both errors were drift, not logic: `CIContext` is `Sendable` on
+the macOS 26.5 SDK this machine has and not on the macOS 15 SDK the runner uses, and the
+runner's older compiler applies a region-isolation rule to `claimingDelivery`'s generic return
+that Swift 6.3 no longer applies.
+
+The rule taken from it is that an annotation has to be true on both toolchains, not merely
+sufficient on one. `nonisolated(unsafe)` on the shared `CIContext` clears the runner but earns a
+redundancy warning locally, so the conformance is asserted once in an `@unchecked Sendable` box
+instead — same claim, same reasoning, no SDK-conditional spelling. `@preconcurrency import
+CoreImage` was rejected for scope: it would drop `Sendable` checking on the whole framework to
+settle one property that had actually been reasoned about.
+
+`claimingDelivery`'s closure parameter is now `@MainActor` rather than its `T` being constrained
+`Sendable`. Both callers happen to return `Sendable` types, so the constraint would have worked,
+but the closure never leaves `MainActor` — it wraps the pasteboard write, the pipeline and the
+claim flag — and saying so removes the crossing that produced the error rather than permitting
+it. Cheaper too: no hop.
+
+Fix 1 was reproduced locally by typechecking against the macOS 15.4 SDK in CommandLineTools,
+which is worth remembering the next time this class of failure lands. Fix 2 was not — that needs
+an older compiler, and there isn't one on this machine.
+
 ## 2026-07-31 — One DeliveryService for the whole app, and its in-flight guard covers Snap too
 
 Snap and Rewind each built their own `DeliveryService`, so the guard added to `deliverClip`
