@@ -10,9 +10,28 @@ jobs:
   build-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      # SDK drift has broken this build twice — code that compiles on a current
+      # local toolchain fails here because the runner's SDK is older. Pinning
+      # makes a given commit build the same way next month; printing the versions
+      # makes the next drift failure diagnosable from the log instead of by
+      # guesswork. The pin is soft on purpose: runner images retire Xcode
+      # versions, and a maintainer should learn that from a warning rather than
+      # from a red build on an unrelated PR.
+      - name: Select and report toolchain
+        run: |
+          WANT=/Applications/Xcode_16.4.app
+          if [ -d "$WANT" ]; then
+            sudo xcode-select -s "$WANT"
+          else
+            echo "::warning::$WANT is gone from this runner image — using the default. Pin a version that exists."
+          fi
+          xcodebuild -version
+          swift --version
+          echo "macOS SDK: $(xcrun --sdk macosx --show-sdk-version)"
 
       - name: Build
         run: swift build -c release
@@ -40,7 +59,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
