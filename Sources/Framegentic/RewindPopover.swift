@@ -16,12 +16,16 @@ final class RewindViewModel {
     enum State {
         case disabled
         case permissionDenied
+        case stopped
         case empty
         case ready
     }
 
     private let captureService: CaptureService
-    private let delivery = DeliveryService()
+    /// Injected, never constructed here. A `DeliveryService` of its own would
+    /// be a second in-flight guard that cannot see Snap's deliveries, which is
+    /// exactly the collision that guard exists to prevent.
+    private let delivery: DeliveryService
     let settings: SettingsModel
 
     private(set) var frames: [CapturedFrame] = []
@@ -39,21 +43,26 @@ final class RewindViewModel {
     /// this type needing to know anything about NSPopover.
     var onRequestClose: (() -> Void)?
 
-    init(captureService: CaptureService, settings: SettingsModel) {
+    init(captureService: CaptureService, delivery: DeliveryService, settings: SettingsModel) {
         self.captureService = captureService
+        self.delivery = delivery
         self.settings = settings
     }
 
+    /// "Enabled with zero frames" is three different situations, and only one
+    /// of them resolves itself by waiting. Permission may be denied or
+    /// revoked; the stream may have died on its own (`didStopWithError` stops
+    /// cleanly and leaves `bufferEnabled` true, deliberately — but nothing
+    /// restarts it); or the buffer may genuinely be filling in. Both live
+    /// checks are read fresh every time, never cached on CaptureService, so
+    /// neither can answer stale.
     var state: State {
         guard settings.bufferEnabled else { return .disabled }
         guard frames.isEmpty else { return .ready }
-        // A denied/revoked Screen Recording permission and a buffer that
-        // simply hasn't filled in yet are both "enabled, zero frames" at the
-        // instant the popover opens — indistinguishable without asking the OS
-        // directly. This is the same preflight check AppDelegate's menu uses
-        // for the identical question, called live rather than cached on
-        // CaptureService, so it can never answer stale.
-        return CGPreflightScreenCaptureAccess() ? .empty : .permissionDenied
+        // The same preflight AppDelegate's menu uses for the identical question.
+        guard CGPreflightScreenCaptureAccess() else { return .permissionDenied }
+        guard captureService.willBuffer else { return .stopped }
+        return .empty
     }
 
     func refreshFrames() {
@@ -180,6 +189,17 @@ struct RewindPopoverView: View {
                     message: CaptureError.screenRecordingDenied.localizedDescription,
                     actionTitle: "Grant Screen Recording…",
                     action: onOpenScreenRecordingSettings
+                )
+            case .stopped:
+                // The one state with no self-healing path: the stream is gone
+                // and nothing retries it, so the message has to name the cause
+                // and the cure rather than ask for patience it won't reward.
+                RewindEmptyStateView(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Rewind stopped recording",
+                    message: "The screen recording ended on its own — unplugging a display or switching users does it. Turn Enable Rewind off and back on in Settings to start it again.",
+                    actionTitle: "Open Settings",
+                    action: onOpenSettings
                 )
             case .empty:
                 RewindEmptyStateView(

@@ -6,12 +6,16 @@ import FramegenticKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let captureService = CaptureService()
+    /// The app's only DeliveryService, handed to everything that delivers.
+    /// Snap and Rewind contend for the pasteboard and the target app's
+    /// keystroke stream, so the flag that serialises them has to sit on one
+    /// shared object — a second instance would be a second, blind guard.
     private let delivery = DeliveryService()
     private let hotKey = HotKeyManager()
     private lazy var model = SettingsModel(store: HotKeyStore(), hotKey: hotKey)
     private lazy var settingsWindow = SettingsWindowController(model: model)
     private lazy var rewindPopover = RewindPopoverController(
-        viewModel: RewindViewModel(captureService: captureService, settings: model),
+        viewModel: RewindViewModel(captureService: captureService, delivery: delivery, settings: model),
         onOpenSettings: { [weak self] in self?.openSettings() },
         onOpenScreenRecordingSettings: { [weak self] in self?.openScreenRecordingSettings() }
     )
@@ -55,10 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             """)
     }
 
-    /// Best-effort: stopCapture() is async and the process may exit before it
-    /// finishes, same as any other in-flight work at quit time in this app. The
-    /// stream and its background queue are torn down by process exit regardless.
+    /// The temp-file removal is synchronous and first, deliberately. A
+    /// delivered clip is full-resolution JPEGs of the screen, and the README
+    /// promises they delete themselves — but the deletion runs on a timer that
+    /// quitting inside the TTL never reaches, and `TempFileManager.deinit`
+    /// doesn't run at process exit either. An awaited cleanup would be no
+    /// better: the task may never be resumed before the process dies. A plain
+    /// `removeItem` on the way out is the only construction that actually
+    /// finishes.
+    ///
+    /// stopCapture() stays best-effort by contrast, because nothing outlives
+    /// the process if it doesn't finish — the stream and its queue are torn
+    /// down by exit regardless.
     func applicationWillTerminate(_ notification: Notification) {
+        delivery.removeDeliveredFiles()
         let previous = bufferingTransition
         bufferingTransition = Task { [weak self] in
             await previous?.value
@@ -122,6 +136,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return image
     }
 
+    private static func refusedIcon() -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let image = NSImage(systemSymbolName: "exclamationmark.circle.fill",
+                            accessibilityDescription: "Another delivery is still running")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }
+
     /// Distinct from the idle glyph on purpose — an app that can reproduce the
     /// last few minutes of the screen must say so visibly, not as a hidden
     /// preference. This is what Rewind being on looks like in the menu bar.
@@ -141,8 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureService.isBuffering ? Self.bufferingIcon() : Self.menuBarIcon()
     }
 
-    /// Applies currentIdleIcon() unless a confirmation tick is currently showing —
-    /// that tick's own revert reads the same helper a second later, so skipping
+    /// Applies currentIdleIcon() unless a flash is currently showing — that
+    /// flash's own revert reads the same helper a second later, so skipping
     /// here never leaves the icon stale, only briefly deferred.
     private func refreshStatusIcon() {
         guard !isShowingConfirmation else { return }
@@ -156,11 +179,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// so a tick that overlaps a buffering start/stop still reverts to the correct
     /// icon a second later rather than the one true when it fired.
     private func flashCaptureConfirmation() {
+        flashStatusIcon(Self.confirmationIcon())
+    }
+
+    /// A refused Snap goes here rather than through `report`, which activates
+    /// the app to run a modal. A Snap is only ever refused while another
+    /// delivery is waiting for its target to come frontmost, so stealing focus
+    /// to explain that would trip `checkGuard` and abort the very delivery the
+    /// refusal is protecting. The menu bar is already this app's channel for
+    /// "the hotkey did something you can't otherwise see".
+    private func flashDeliveryRefused() {
+        flashStatusIcon(Self.refusedIcon())
+    }
+
+    private func flashStatusIcon(_ image: NSImage?) {
         confirmationTask?.cancel()
         confirmationGeneration &+= 1
         let generation = confirmationGeneration
         isShowingConfirmation = true
-        statusItem?.button?.image = Self.confirmationIcon()
+        statusItem?.button?.image = image
         confirmationTask = Task { [weak self] in
             // Released on every exit, cancelled or not, so a future cancel site
             // can't strand the flag and wedge refreshStatusIcon() off for good.
@@ -298,18 +335,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rewindPopover.toggle(relativeTo: statusItem)
     }
 
+    /// `isCapturing` still guards Snap against Snap, cheaply and silently.
+    /// Snap against a Rewind clip is DeliveryService's to refuse — it is the
+    /// only thing that can see both — and that refusal comes back as a thrown
+    /// `deliveryInProgress` rather than a dropped keypress.
     private func capture() {
         guard !isCapturing else { return }
         isCapturing = true
         Task {
             defer { isCapturing = false }
+            let target = model.deliveryTarget
             do {
-                let changeCount = try await captureService.captureToClipboard()
-                let target = model.deliveryTarget
-                try await delivery.deliver(to: target,
-                                           autoSend: model.autoSend,
-                                           clipboardChangeCount: changeCount)
+                try await delivery.deliverSnap(to: target, autoSend: model.autoSend) {
+                    try await self.captureService.captureToClipboard()
+                }
                 if !target.autoPaste { flashCaptureConfirmation() }
+            } catch DeliveryError.deliveryInProgress {
+                Log.paste.info("Snap refused: another delivery is still in flight")
+                flashDeliveryRefused()
             } catch {
                 report(error)
             }

@@ -21,7 +21,7 @@ enum DeliveryError: LocalizedError {
         case .focusLost(let bundleID):
             return "\(bundleID ?? "Another app") took focus, so nothing was pasted. Your capture is on the clipboard — paste it with ⌘V."
         case .deliveryInProgress:
-            return "Still copying the last clip. Wait for it to finish, then try again."
+            return "Framegentic is still delivering the last capture. Wait for it to finish, then try again."
         }
     }
 }
@@ -36,28 +36,65 @@ final class DeliveryService {
     private let postPasteClearDelay: Duration = .seconds(3)
     private let pipeline = OptimizationPipeline()
 
-    /// Guards `deliverClip` only. `deliver` needs nothing equivalent: its
-    /// caller writes the pasteboard before `deliver` is ever called, so by the
-    /// time `deliver` runs there is nothing left inside this class for a
-    /// second call to clobber. `deliverClip` writes the pasteboard itself, and
-    /// RewindViewModel's `isDelivering` cannot be the thing that prevents two
-    /// overlapping writes — it is deliberately reset the moment the popover
-    /// closes, so a detached delivery's UI goes quiet (see
-    /// RewindViewModel.releaseFrames), and that reset is exactly what lets a
-    /// second confirmSelection() start a second deliverClip while the first is
-    /// still mid-flight. A flag on the view model can always be reopened by
-    /// the view model; this one lives one level down, where a second caller
-    /// cannot bypass it no matter what UI state does.
-    private var clipDeliveryInFlight = false
+    /// One delivery at a time, whichever path asked for it.
+    ///
+    /// The state a second delivery corrupts is not inside this class — it is
+    /// the system pasteboard and the target app's keystroke stream, both
+    /// global. So a flag scoped to one path cannot help: a Snap fired during a
+    /// clip's cold-launch wait calls `clearContents()` on the clip's file URLs
+    /// and interleaves a second ⌘V and Return with the first. Both entry
+    /// points claim this flag, and the whole app shares one `DeliveryService`
+    /// so the flag is as global as the thing it protects.
+    ///
+    /// It also cannot live in the UI. `RewindViewModel.isDelivering` is reset
+    /// the moment the popover closes so a detached delivery's UI goes quiet
+    /// (see `RewindViewModel.releaseFrames`), and that reset is exactly what
+    /// lets a reopened popover start a second clip mid-flight. A flag the view
+    /// model owns can always be reopened by the view model.
+    private var deliveryInFlight = false
+
+    /// Runs `body` as the app's one in-flight delivery, or refuses. `defer`
+    /// releases the claim on every exit, thrown or returned, so a failed
+    /// delivery cannot wedge every later one shut.
+    private func claimingDelivery<T>(_ body: () async throws -> T) async throws -> T {
+        guard !deliveryInFlight else { throw DeliveryError.deliveryInProgress }
+        deliveryInFlight = true
+        defer { deliveryInFlight = false }
+        return try await body()
+    }
+
+    /// A whole Snap — pasteboard write included — under one claim.
+    ///
+    /// `writeCapture` puts the capture on the pasteboard and reports the
+    /// change count it left. It runs inside the claim rather than before it
+    /// because the write is the destructive half: `clearContents()` takes a
+    /// Rewind clip's file URLs with it. Guarding only the paste would still
+    /// let a Snap wipe a clip mid-delivery and then refuse politely — the same
+    /// collision, minus the second ⌘V.
+    func deliverSnap(to target: DeliveryTarget,
+                     autoSend: Bool,
+                     writeCapture: () async throws -> Int) async throws {
+        try await claimingDelivery {
+            let changeCount = try await writeCapture()
+            try await self.deliver(to: target,
+                                   autoSend: autoSend,
+                                   clipboardChangeCount: changeCount)
+        }
+    }
 
     /// Delivers whatever is already on the clipboard to `target`.
     ///
     /// A target that does not auto-paste returns immediately: the clipboard *is*
     /// the delivery, so nothing may expire it before the user pastes. Accessibility
     /// is never requested on that path, which is why it is the default.
-    func deliver(to target: DeliveryTarget,
-                 autoSend: Bool,
-                 clipboardChangeCount: Int) async throws {
+    ///
+    /// Private because the claim lives one level up, in `deliverSnap`: a
+    /// caller that could reach this directly would be a caller able to paste
+    /// without holding the claim, which is the shape of every collision on
+    /// this branch so far.
+    private func deliver(to target: DeliveryTarget,
+                         autoSend: Bool,
+                         clipboardChangeCount: Int) async throws {
         guard target.autoPaste, let bundleID = target.bundleID else {
             return
         }
@@ -90,27 +127,32 @@ final class DeliveryService {
                       to target: DeliveryTarget,
                       autoSend: Bool,
                       ttl: TimeInterval) async throws -> Int {
-        guard !clipDeliveryInFlight else {
-            throw DeliveryError.deliveryInProgress
-        }
-        clipDeliveryInFlight = true
-        defer { clipDeliveryInFlight = false }
+        try await claimingDelivery {
+            let written = await self.pipeline.processAndCopy(frames: frames, ttl: ttl)
+            guard written.frames > 0 else { return 0 }
 
-        let written = await pipeline.processAndCopy(frames: frames, ttl: ttl)
-        guard written.frames > 0 else { return 0 }
+            // Started here rather than on the way out, because TempFileManager
+            // started the files' own ttl at the moment of that write. Scheduling
+            // this after the paste would run the two clocks ten seconds apart on a
+            // cold launch, and the pasteboard would spend that gap pointing at
+            // files already deleted.
+            self.clearClipboardLater(ifStillAt: written.changeCount, after: .seconds(ttl))
 
-        // Started here rather than on the way out, because TempFileManager
-        // started the files' own ttl at the moment of that write. Scheduling
-        // this after the paste would run the two clocks ten seconds apart on a
-        // cold launch, and the pasteboard would spend that gap pointing at
-        // files already deleted.
-        clearClipboardLater(ifStillAt: written.changeCount, after: .seconds(ttl))
-
-        guard target.autoPaste, let bundleID = target.bundleID else {
+            guard target.autoPaste, let bundleID = target.bundleID else {
+                return written.frames
+            }
+            try await self.activateAndPaste(bundleID: bundleID,
+                                            displayName: target.displayName,
+                                            autoSend: autoSend)
             return written.frames
         }
-        try await activateAndPaste(bundleID: bundleID, displayName: target.displayName, autoSend: autoSend)
-        return written.frames
+    }
+
+    /// Deletes every temp file a delivered clip has written, without an actor
+    /// hop. Called at termination, where an `await` is not reliable — see
+    /// `AppDelegate.applicationWillTerminate`.
+    func removeDeliveredFiles() {
+        pipeline.removeSessionDirectory()
     }
 
     /// Activates `target`, waits for it to take focus, then pastes and

@@ -167,6 +167,14 @@ final class CaptureService: NSObject {
 
     var isBuffering: Bool { state.isBuffering }
 
+    /// `isBuffering` answers "are frames arriving"; this answers the different
+    /// question Rewind's empty state has to ask — "will they?". A start still
+    /// coming up says yes, so a popover opened a second after the toggle isn't
+    /// told the stream is dead. An `.idle` service while Rewind is still
+    /// enabled says no: `didStopWithError` left it that way and nothing
+    /// retries, so an empty buffer there stays empty forever.
+    var willBuffer: Bool { state == .starting || state == .running }
+
     /// A snapshot, not a live handle. RingBuffer has no Sendable conformance of
     /// its own (see the note above this section) and was never meant to leave
     /// this file — callers get a plain array of Sendable CapturedFrames, taken
@@ -289,14 +297,24 @@ final class CaptureService: NSObject {
     /// The idle backoff has to reach the stream, not just the sampling loop.
     /// Leaving delivery pinned at the active rate while sampling drops to a third
     /// of it means two of every three frames are decoded overnight for nothing.
-    private func applyDeliveryRate(_ interval: TimeInterval) async {
-        guard let stream, let display = cachedDisplay else { return }
+    ///
+    /// Reports whether the stream took the new rate, because the caller may only
+    /// record a rate the stream is actually running at. `cachedDisplay` is
+    /// cleared by any screen-parameter change, so a monitor plug or unplug puts
+    /// this on the failing branch until something re-resolves a display.
+    private func applyDeliveryRate(_ interval: TimeInterval) async -> Bool {
+        guard let stream, let display = cachedDisplay else {
+            Log.capture.error("Could not retune stream delivery rate: no display resolved")
+            return false
+        }
         do {
             try await stream.updateConfiguration(
                 Self.bufferConfiguration(display: display, frameInterval: interval)
             )
+            return true
         } catch {
             Log.capture.error("Could not retune stream delivery rate: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -308,9 +326,13 @@ final class CaptureService: NSObject {
                 guard let self else { return }
                 self.sampleFrame()
                 let interval = self.activityMonitor.currentState == .active ? activeInterval : idleInterval
-                if interval != deliveredInterval {
+                // Advanced only on success, so a retune the stream refused is
+                // retried on the next tick rather than recorded as done. Set
+                // first, this latches: one failure and every later retune is
+                // skipped as already-applied, silently, for the rest of the
+                // session.
+                if interval != deliveredInterval, await self.applyDeliveryRate(interval) {
                     deliveredInterval = interval
-                    await self.applyDeliveryRate(interval)
                 }
                 do {
                     try await Task.sleep(for: .seconds(interval))
