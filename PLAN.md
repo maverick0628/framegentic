@@ -476,6 +476,27 @@ an older build reads as off and stays stored — flipping `isRewindAvailable` ba
 
 ## Completed
 
+**2026-07-31 — ClaudeShot → Framegentic reference sweep.** Everything outside the
+repo that still pointed at the old name. Two Claude Code memory files renamed with
+all four parts each — filename, `name:` frontmatter, `MEMORY.md` pointer and
+`[[wikilink]]` — plus the knowledge-sync state keys that indexed them, the portfolio
+card in `digital-landscape/landscape.html`, and the vault's archived project note,
+whose `project-path` pointed at the dead `~/repos/claudeshot` and whose banner still
+claimed the GitHub repo was archived read-only.
+
+The rule that shaped it: rename the product name, never bare "Claude" where it means
+Anthropic's app, and never rewrite dated history. That last one mattered more than
+expected. Two live automations string-match `**ClaudeShot**` against real archive
+data — the `/eod` skill's test fixtures and a one-time dedupe verification task — so
+renaming them would have broken a passing test and a scheduled check. Session
+transcripts, RoutineLog, RSS digests and dated session-close reports were left as
+written for the same reason.
+
+Left for Duncan: a stale `ClaudeShot` login item sitting beside the live Framegentic
+one, and whether the vault note should come out of `Archive/` now the project is
+active again. The old `/Applications/ClaudeShot.app` turned out to be in `~/.Trash`
+already, trashed 2026-07-29.
+
 **2026-07-31 — Rewind mode.** Seven tasks via subagent-driven development. Ported
 FrameSnap's buffer, perceptual hashing, image pipeline and temp-file lifecycle into
 the kit; added buffer settings off by default, the continuous capture loop, a second
