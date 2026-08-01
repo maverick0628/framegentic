@@ -69,11 +69,24 @@ public actor OptimizationPipeline {
         let urls = await process(frames: frames, maxWidth: maxWidth, jpegQuality: jpegQuality, dedupThreshold: dedupThreshold)
         guard !urls.isEmpty else { return (frames: 0, changeCount: 0) }
         let changeCount = ClipboardWriter.writeFileURLs(urls)
+        // Scheduled whether or not the write took. The files exist either way,
+        // and a refused write is the one case where nothing on the clipboard
+        // will ever point at them — orphans with no deadline otherwise.
         await tempFileManager.scheduleCleanup(after: ttl)
+        // Zero frames is how the caller learns the clipboard doesn't have
+        // them, so the toast can't claim a delivery that didn't land.
+        guard let changeCount else { return (frames: 0, changeCount: 0) }
         return (frames: urls.count, changeCount: changeCount)
     }
 
     public func cleanup() async {
         await tempFileManager.cleanupAll()
+    }
+
+    /// The quit-time counterpart to `cleanup()`. Same files, no suspension —
+    /// see `TempFileManager.removeSessionDirectory()` for why that matters at
+    /// termination.
+    public nonisolated func removeSessionDirectory() {
+        tempFileManager.removeSessionDirectory()
     }
 }

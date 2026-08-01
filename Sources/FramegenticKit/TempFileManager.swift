@@ -22,10 +22,22 @@ public actor TempFileManager {
 
     public init() {
         let sessionDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("framesnap")
+            .appendingPathComponent("framegentic")
             .appendingPathComponent(UUID().uuidString)
         self.sessionDir = sessionDir
         self.batchDir = sessionDir.appendingPathComponent(UUID().uuidString)
+    }
+
+    /// Deletes this session's files without hopping onto the actor.
+    ///
+    /// For app termination, where an `await` is not a promise: the process can
+    /// exit before a suspended task is ever resumed, so anything that has to
+    /// finish before quitting cannot suspend. Reading `sessionDir` off the
+    /// actor is safe because it is immutable. The cost is that the pending
+    /// cleanup tasks aren't cancelled and `writtenURLs` isn't cleared, neither
+    /// of which outlives the process this is called from.
+    public nonisolated func removeSessionDirectory() {
+        try? FileManager.default.removeItem(at: sessionDir)
     }
 
     public func write(_ data: Data, filename: String) throws -> URL {

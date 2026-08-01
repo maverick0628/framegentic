@@ -733,6 +733,21 @@ final class OptimizationPipelineTests: XCTestCase {
         await pipeline.cleanup()
         XCTAssertFalse(urls.isEmpty)
     }
+
+    // The quit-time path AppDelegate.applicationWillTerminate takes. Its whole
+    // point is finishing without a suspension, so it is asserted immediately
+    // after the call, with nothing awaited in between.
+    func testRemoveSessionDirectoryDeletesDeliveredFiles() async throws {
+        let img = try makeImage(width: 400, height: 300)
+        let pipeline = OptimizationPipeline()
+        let urls = await pipeline.process(frames: [CapturedFrame(image: img)])
+        let first = try XCTUnwrap(urls.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+
+        pipeline.removeSessionDirectory()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+    }
 }
 
 // TempFileManager is a plain actor, so write/cleanupAll are async and each
@@ -783,7 +798,21 @@ final class TempFileManagerTests: XCTestCase {
         let url = try await manager.write(Data("x".utf8), filename: "test.jpg")
         let tmpDir = FileManager.default.temporaryDirectory.path
         XCTAssertTrue(url.path.hasPrefix(tmpDir))
-        XCTAssertTrue(url.path.contains("framesnap"))
+        XCTAssertTrue(url.path.contains("framegentic"))
+    }
+
+    // Quit-time cleanup can't await — see removeSessionDirectory() — so the
+    // one path that runs at termination is the one worth pinning.
+    func testRemoveSessionDirectoryDeletesWithoutSuspending() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let url = try await manager.write(Data("x".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 3600)
+
+        manager.removeSessionDirectory()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Files must be gone the moment the call returns, not after a hop")
     }
 
     // The user is told when each clip disappears, so a later clip must not
