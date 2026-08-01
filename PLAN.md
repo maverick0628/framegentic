@@ -11,7 +11,7 @@ The audit is done. What it found, and what each finding costs if shipped as-is:
 | 1 | GitHub description still advertises Rewind — "or rewind and send the last two minutes" | **Real.** First thing a visitor reads, and it promises a feature that is switched off. |
 | 2 | Topics include `rewind` and `screen-recording` | Same, on the discovery surface. |
 | 3 | `.claude/` is ignored only by `.git/info/exclude`, `.letta/` only by a global gitignore — neither is in the repo's `.gitignore` | **Real.** Both are local-only. A contributor cloning the public repo gets them tracked. Same class as the CipherGate CI gotcha: passes here, breaks on a fresh clone. |
-| 4 | PLAN.md carried 7 absolute paths into `/Users/duncansmith/repos/framesnap`, a private repo | Reader-hostile — dead paths to a 404 — plus it leaks the local tree layout. |
+| 4 | PLAN.md carried 7 absolute home-directory paths into a private sibling repo | Reader-hostile — dead paths to a 404 — plus it leaks the local tree layout. |
 | 5 | CI pins no toolchain | **Real.** SDK drift has broken this build twice. Public repo means contributor PRs, and they would hit it blind. |
 | 6 | No release artifacts in `.gitignore` (`cert.p12`, `key.p8`, `*.zip`) | Low but cheap. Release steps write a signing cert and an ASC key to the repo root. |
 
