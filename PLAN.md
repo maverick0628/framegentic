@@ -453,23 +453,24 @@ Open a PR against `master`. List the manual GUI checks below with their status �
 
 ## Outstanding — manual GUI checks
 
-Nothing here has been verified. The app target has no unit tests by design, so these are the only checks that can confirm Rewind works.
+Nothing here has been verified. The app target has no unit tests by design, so these are the only
+checks that can confirm the built app behaves.
 
-- [ ] The Rewind section is absent from settings until the buffer toggle is found; enabling it reveals the duration control and the second recorder
-- [ ] With the buffer **off**, Snap still captures and delivers exactly as before
-- [ ] With the buffer **off**, the Rewind hotkey explains itself rather than showing an empty popover
-- [ ] Enabling the buffer changes the menu bar icon, and disabling it changes it back
-- [ ] A capture confirmation tick during buffering reverts to the **buffering** icon, not the idle one
-- [ ] The popover opens on its hotkey, takes keyboard focus, and scrubs
-- [ ] Trimming to a range and delivering puts the right frames on the clipboard, in order
-- [ ] Delivering a clip with Clipboard only selected does **not** prompt for Accessibility
-- [ ] Delivering a clip to Claude activates it and pastes
-- [ ] Escape and click-away both close the popover without delivering
-- [ ] Recording either shortcut does not fire the other
-- [ ] Both shortcuts survive quit and relaunch
-- [ ] Leaving the buffer running for several minutes does not grow memory without bound
+Rewind is disabled (`SettingsModel.isRewindAvailable = false`), so the checks below are what
+"off" should look like — its feature checklist is archived with the completed plan.
 
-Two known-correct behaviours, so they are not mistaken for bugs: the buffer is **off** on first launch by design, and Snap never needs Accessibility unless you pick an auto-pasting target.
+- [ ] Settings shows no Rewind section at all — no toggle, no duration control, no second recorder
+- [ ] The menu bar shows no "Rewind hotkey unavailable" warning
+- [ ] ⇧⌘7 does nothing in Framegentic and is free for another app to claim
+- [ ] The menu bar icon never enters the buffering state
+- [ ] Snap captures and delivers to Clipboard only, with no Accessibility prompt
+- [ ] Snap captures, activates and pastes with Claude selected; auto-send submits
+- [ ] Recording a new Snap shortcut works, takes effect immediately and survives relaunch
+- [ ] **Reset to Default** returns to ⇧⌘6
+- [ ] Start at login toggles and reports its real state
+
+One known-correct behaviour, so it is not mistaken for a bug: a stored `BufferEnabled = true` from
+an older build reads as off and stays stored — flipping `isRewindAvailable` back restores it.
 
 ---
 

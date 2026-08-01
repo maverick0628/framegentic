@@ -247,7 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(warning)
         }
 
-        if !model.rewindHotKeyRegistered {
+        // Without the availability check this warning would be permanent: with
+        // Rewind off the hotkey is deliberately never registered, so "unregistered"
+        // stops meaning "something took your combo".
+        if SettingsModel.isRewindAvailable, !model.rewindHotKeyRegistered {
             let warning = NSMenuItem(
                 title: "Rewind hotkey unavailable — is \(model.rewindHotKeyConfig.displayString) taken?",
                 action: #selector(openSettings),
