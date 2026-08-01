@@ -66,7 +66,7 @@ Seven files move with their tests. This is the largest task by file count and th
 - `TempFileManager` — `init()`, `write(_:filename:) throws -> URL`, `scheduleCleanup(after:)`, `cleanupAll()`, `currentSessionURLs()`
 - `ClipboardWriter` — `writeFileURLs(_:)`
 
-- [ ] **Step 1: Copy the seven source files**
+- [x] **Step 1: Copy the seven source files**
 
 ```bash
 cd /Users/duncansmith/repos/claudeshot
@@ -77,7 +77,7 @@ cp "$FS/Pipeline/DHash.swift" "$FS/Pipeline/ImageProcessor.swift" "$FS/Pipeline/
 
 **Do not copy `AppSettings.swift`.** It is `ObservableObject` with `@Published` properties, which conflicts with this project's `@Observable` rule. Task 2 folds its four settings into `SettingsModel` instead.
 
-- [ ] **Step 2: Make them build under Swift 6**
+- [x] **Step 2: Make them build under Swift 6**
 
 Compile and fix what the language mode rejects. Expect at minimum:
 
@@ -86,7 +86,7 @@ Compile and fix what the language mode rejects. Expect at minimum:
 
 Do not silence a real data race with `@unchecked`. If something genuinely needs synchronising, synchronise it and say why in a comment.
 
-- [ ] **Step 3: Port the tests**
+- [x] **Step 3: Port the tests**
 
 Copy the five suites from `/Users/duncansmith/repos/framesnap/FrameSnapTests/` — `RingBufferTests`, `DHashTests`, `ImageProcessorTests`, `OptimizationPipelineTests`, `TempFileManagerTests` — into `Tests/FramegenticKitTests/FramegenticKitTests.swift`, appended as new classes.
 
@@ -94,7 +94,7 @@ The file already has `import XCTest`, `import Carbon.HIToolbox` and `@testable i
 
 If a ported test used a FrameSnap-only helper, port the helper too rather than weakening the test.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `swift test`
 Expected: `Executed 66 tests, with 0 failures` (42 baseline + 24 ported)
@@ -104,7 +104,7 @@ If the count differs, reconcile it before continuing — report the actual numbe
 Run: `swift build -c release 2>&1 | grep -ciE 'warning:|error:'`
 Expected: `0`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -131,7 +131,7 @@ FrameSnap's four settings fold into the existing `@Observable SettingsModel`. On
 
 **Source for defaults:** `/Users/duncansmith/repos/framesnap/FrameSnapKit/Services/AppSettings.swift` — read its `defaults.register(defaults:)` block and carry the same values.
 
-- [ ] **Step 1: Add the settings**
+- [x] **Step 1: Add the settings**
 
 Add to `SettingsModel`, following the existing `deliveryTarget` pattern of a `didSet` that writes through to `UserDefaults`. Read the four defaults out of FrameSnap's `AppSettings.swift` `defaults.register(defaults:)` block and carry the same values:
 
@@ -170,7 +170,7 @@ The `max(1, ...)` and `max(frameIntervalSeconds, 0.1)` guards matter: a zero or 
 
 Do **not** add a `launchAtLogin` — `SettingsModel.startAtLogin` already covers it and is wired to `SMAppService`. Porting FrameSnap's would give you two settings writing different keys for one behaviour.
 
-- [ ] **Step 2: Add the Rewind section to settings**
+- [x] **Step 2: Add the Rewind section to settings**
 
 A section with a toggle labelled for what it does, not what it is — the user is enabling Rewind, and continuous capture is the consequence. Beneath it, only when enabled, a control for buffer duration.
 
@@ -178,7 +178,7 @@ The copy must be honest about what turning it on means: the app begins continuou
 
 Follow the conditional-copy pattern already in `SettingsView` for the delivery target, where explanatory text appears alongside the control it explains.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `swift test`
 Expected: `Executed 66 tests, with 0 failures` — this task adds no tests; the app target is untested by design.
@@ -186,7 +186,7 @@ Expected: `Executed 66 tests, with 0 failures` — this task adds no tests; the 
 Run: `swift build -c release 2>&1 | grep -ciE 'warning:|error:'`
 Expected: `0`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -213,11 +213,11 @@ The capture layer gains a second mode. `ScreenshotService` currently grabs one f
 
 **Source:** `/Users/duncansmith/repos/framesnap/FrameSnap/Capture/ScreenCaptureManager.swift` (102 lines) and `ActivityMonitor.swift` (54 lines)
 
-- [ ] **Step 1: Port the activity monitor**
+- [x] **Step 1: Port the activity monitor**
 
 Copy `ActivityMonitor.swift` and adapt it. It varies capture rate by user activity — faster while working, slower while idle — which is what keeps an always-on buffer affordable.
 
-- [ ] **Step 2: Extend the capture service**
+- [x] **Step 2: Extend the capture service**
 
 Rename `ScreenshotService` to `CaptureService` with `git mv` and give it a continuous path alongside the existing one-shot `captureToClipboard()`. It should:
 
@@ -228,23 +228,23 @@ Rename `ScreenshotService` to `CaptureService` with `git mv` and give it a conti
 
 The single-frame path must not depend on the buffer. Snap works with Rewind disabled; that is the whole point of the default.
 
-- [ ] **Step 3: Wire the lifecycle in `AppDelegate`**
+- [x] **Step 3: Wire the lifecycle in `AppDelegate`**
 
 Start buffering at launch only if `model.bufferEnabled`. Start and stop it when the setting changes. Stop it on termination.
 
-- [ ] **Step 4: Show it in the menu bar**
+- [x] **Step 4: Show it in the menu bar**
 
 When the buffer is running, the status item must reflect it — a distinct icon state, not a hidden preference. This is a spec requirement, not a nicety.
 
 `AppDelegate` already flashes a one-second confirmation tick after a capture (`flashCaptureConfirmation`). The buffer indicator must compose with it: a tick during buffering must revert to the *buffering* icon, not the idle one.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `swift test` — 66 pass. Run a clean warning-free `swift build -c release`, then `bash scripts/build.sh`.
 
 Do **not** drive the GUI, install to `/Applications`, or change system settings. Note in your report that the visual states need a human pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -271,18 +271,18 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - `HotKeyStore` gains a second stored shortcut, keyed separately
 - `HotKeyManager` registers two hotkeys with distinct Carbon IDs
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `HotKeyStore` currently persists one config under one key. Add a test proving two shortcuts persist independently: saving one must not disturb the other, each falls back to its own default when unset, and a corrupt blob for one does not affect the other.
 
 Give Rewind a default that passes `HotKeyValidator` and is not `HotKeyConfig.default` (⇧⌘6). Assert it validates — the same self-consistency trap the capture default has a test for.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `swift test --filter HotKeyStore`
 Expected: FAIL — the second shortcut's API does not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Extend `HotKeyStore` to hold two shortcuts. Prefer a parameterised API over duplicated members — the store already validates on load, and that logic should not be copied.
 
@@ -290,15 +290,15 @@ Extend `HotKeyManager` to register both. Each Carbon hotkey needs its **own `Eve
 
 `unregister()` currently tears down one. Recording a shortcut suspends the global hotkey so the combo can be captured — with two hotkeys, recording either must suspend **both**, or recording Rewind's shortcut could fire Snap.
 
-- [ ] **Step 4: Wire settings and the menu**
+- [x] **Step 4: Wire settings and the menu**
 
 A second recorder field, labelled for Rewind. It appears only when the buffer is enabled — a shortcut for a disabled feature is noise.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `swift test` — expect 66 plus your new tests; state the number. Clean warning-free release build.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -326,7 +326,7 @@ The scrubber UI. This is the largest app-layer task and the only one with genuin
 
 **On the toast, which is not redundant with the existing tick.** Framegentic already flashes a one-second checkmark on the status item after a Snap, and it is tempting to reuse that here. Do not. `ToastView` reports *"N frames copied · deletes in M min"* — a frame count and a deletion deadline, neither of which a checkmark can express. A clip delivery needs both: the user has just trimmed a range and has to know how much was taken, and the files are on a TTL so they need to know it is finite. Port the toast for clips; leave the tick for single snaps.
 
-- [ ] **Step 1: Port the views**
+- [x] **Step 1: Port the views**
 
 Bring across the popover, scrubber and preview. `CaptureViewModel` is `ObservableObject`-era — convert it to `@Observable` rather than carrying the old pattern in, per the global constraints.
 
@@ -334,23 +334,23 @@ Preserve the interaction: scrub the buffer, trim to a range, see the selected fr
 
 `CapturedFrame.formattedTimeAgo` already renders the "−1m 20s" labels — use it rather than reimplementing.
 
-- [ ] **Step 2: Present it from the hotkey**
+- [x] **Step 2: Present it from the hotkey**
 
 The Rewind hotkey opens the popover anchored to the status item. It needs keyboard focus for scrubbing, and this app is `LSUIElement` — `NSApp.activate()` is required or the popover never becomes key. `SettingsWindowController` already solves this exact problem; follow it.
 
 Closing behaviour must be unambiguous: Escape closes without delivering, clicking away closes without delivering, and delivering closes.
 
-- [ ] **Step 3: Handle the empty and disabled cases**
+- [x] **Step 3: Handle the empty and disabled cases**
 
 Opening Rewind with the buffer disabled, or enabled but empty (just switched on, nothing captured yet), must explain itself rather than showing a blank popover. These are the two states a new user hits first.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `swift test` — count unchanged from Task 4. Clean warning-free release build, then `bash scripts/build.sh`.
 
 Do not drive the GUI. List what needs a human pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -372,19 +372,19 @@ Reconciling the two clipboard strategies, and routing a trimmed clip through the
 - Modify: `Sources/Framegentic/DeliveryService.swift`
 - Modify: `Sources/Framegentic/RewindPopover.swift`
 
-- [ ] **Step 1: Deliver frames as file URLs**
+- [x] **Step 1: Deliver frames as file URLs**
 
 Add a path to `DeliveryService` that takes the trimmed frames, runs them through `OptimizationPipeline`, writes them via `TempFileManager`, and puts the file URLs on the clipboard with `ClipboardWriter.writeFileURLs`.
 
 The existing single-image path is unchanged. Both coexist: one image can be pasteboard data, several cannot.
 
-- [ ] **Step 2: Reuse the target logic, do not fork it**
+- [x] **Step 2: Reuse the target logic, do not fork it**
 
 A clip delivers to the same `DeliveryTarget` as a snap. Clipboard-only stops after the write; an auto-pasting target activates, guards and pastes exactly as it does today.
 
 **The `autoPaste` guard must stay the first thing that runs**, and the Accessibility check must stay behind it. That property is compiler-enforced today — a clipboard-only user is never prompted for Accessibility — and this task must not weaken it.
 
-- [ ] **Step 3: Get the clipboard hygiene right, and it differs from Snap**
+- [x] **Step 3: Get the clipboard hygiene right, and it differs from Snap**
 
 Snap's single image is cleared from the clipboard a few seconds after a successful paste. A clip is different: it is file URLs pointing at real files, and `TempFileManager` owns their deletion on a TTL.
 
@@ -392,11 +392,11 @@ Decide what happens to the pasteboard entry when those files are deleted, and wr
 
 Whatever you choose, the README's clipboard-hygiene section must describe it accurately — that section was corrected once already for overclaiming.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `swift test`, clean release build, `bash scripts/build.sh`. Report which delivery paths you could and could not verify without a GUI.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -416,7 +416,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `README.md`, `DECISIONS.md`, `Resources/Info.plist`
 
-- [ ] **Step 1: Document Rewind in the README**
+- [x] **Step 1: Document Rewind in the README**
 
 Add it as a mode alongside Snap. Cover: what it does, that it is **off by default**, that enabling it starts continuous in-memory capture, that frames never touch disk until delivery, and how to turn it off.
 
@@ -424,15 +424,15 @@ Update the privacy section. The "no network code" claim survives untouched and s
 
 Update the badge test count and the comparison table — Rewind is the row where nothing else competes.
 
-- [ ] **Step 2: Update the capture usage string**
+- [x] **Step 2: Update the capture usage string**
 
 `NSScreenCaptureUsageDescription` currently describes one-shot capture. It now also covers continuous buffering when Rewind is enabled. Keep it accurate and short.
 
-- [ ] **Step 3: Record the decisions**
+- [x] **Step 3: Record the decisions**
 
 Add entries to `DECISIONS.md`, newest first, for the three this plan settled — file URLs for clips, two hotkeys, configurable duration without a frame-interval UI — plus anything the implementation forced a call on.
 
-- [ ] **Step 4: Full verification**
+- [x] **Step 4: Full verification**
 
 ```bash
 rm -rf .build/release .build/arm64-apple-macosx/release
@@ -443,7 +443,7 @@ bash scripts/build.sh 2>&1 | tail -3
 
 Expected: 0 warnings, all tests pass, bundle signs and verifies.
 
-- [ ] **Step 5: Commit and open a PR**
+- [x] **Step 5: Commit and open a PR**
 
 Open a PR against `master`. List the manual GUI checks below with their status — none of them can be run without a human.
 
@@ -474,6 +474,20 @@ Two known-correct behaviours, so they are not mistaken for bugs: the buffer is *
 ---
 
 ## Completed
+
+**2026-07-31 — Rewind mode.** Seven tasks via subagent-driven development. Ported
+FrameSnap's buffer, perceptual hashing, image pipeline and temp-file lifecycle into
+the kit; added buffer settings off by default, the continuous capture loop, a second
+hotkey, the scrubber popover, and clip delivery. 74 kit tests.
+
+Four of seven tasks needed fix rounds, and the same failure shape recurred three
+times: a guard placed where it could not see a second caller. Task 3's serialisation
+sat in `AppDelegate` while `didStopWithError` bypassed it; Task 6's in-flight flag
+sat in the view model while the delivery detached; and the final review found the
+flag was per-instance while the contended state — the system pasteboard — is global,
+letting a Snap destroy an in-flight clip's URLs and submit two messages. Spec:
+`docs/superpowers/specs/2026-07-31-framegentic-merge-design.md`.
+
 
 **2026-07-31 — Framegentic rename and delivery targets.** Seven tasks executed via
 subagent-driven development, merged as PR #4. The app is renamed, delivery is a
