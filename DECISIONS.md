@@ -1,5 +1,132 @@
 # Decisions
 
+## 2026-07-31 — One DeliveryService for the whole app, and its in-flight guard covers Snap too
+
+Snap and Rewind each built their own `DeliveryService`, so the guard added to `deliverClip`
+was per-instance — it serialised clip against clip and nothing else. The state a second
+delivery corrupts isn't inside that class, though. It's the system pasteboard and the target
+app's keystroke stream, both global: a Snap fired during a clip's ten-second cold-launch wait
+calls `clearContents()` on the clip's file URLs, then posts a second ⌘V and Return into the
+same app. One PNG pasted twice, two messages submitted, and a toast still reading "6 frames
+copied". There is no undo.
+
+Both halves were needed. Sharing the instance alone leaves `deliver` consulting no guard;
+widening the guard alone leaves two instances that can't see each other. So `AppDelegate` now
+owns the only `DeliveryService` and injects it into `RewindViewModel`, and the flag is claimed
+by a `claimingDelivery` helper that both entry points route through, releasing on every exit
+including a throw.
+
+The Snap entry point became `deliverSnap(to:autoSend:writeCapture:)` — a closure, so the
+pasteboard write happens *inside* the claim rather than before it. `deliver` went private
+behind it. That shape was chosen over a public check-then-call because the write is the
+destructive half: guarding only the paste would still let a Snap wipe a clip mid-delivery and
+then refuse politely. Third time on this branch that a guard was placed where it couldn't see
+the second caller; making the unguarded path unreachable is what stops a fourth.
+
+The refusal reaches the user through the menu bar, not `report`'s alert. `report` calls
+`NSApp.activate()` and runs a modal, and a Snap is only ever refused while another delivery is
+waiting for its target to come frontmost — so explaining the refusal that way would trip
+`checkGuard` and abort the delivery the refusal exists to protect. The status item already
+flashes for "the hotkey did something you can't otherwise see"; a refusal glyph reuses it.
+
+## 2026-07-31 — Delivered temp files are deleted synchronously at terminate
+
+`OptimizationPipeline.cleanup()` had no caller outside the tests, and neither
+`applicationWillTerminate` nor `TempFileManager.deinit` (which doesn't run at process exit)
+removed anything — so quitting inside the TTL left full-resolution JPEGs of the screen in
+`/var/folders` until macOS's periodic sweep, days later, against a README that says they
+delete themselves on a timer.
+
+Cleanup at terminate can't `await`: the process can exit before a suspended task is ever
+resumed, so an awaited cleanup is a cleanup that might not happen. `TempFileManager` gained a
+`nonisolated func removeSessionDirectory()` that calls `removeItem` directly instead — safe
+off the actor because `sessionDir` is immutable, and it finishes before the call returns. The
+cost is that pending cleanup tasks aren't cancelled and `writtenURLs` isn't cleared, neither
+of which outlives the process doing the quitting. `cleanup()` stays for the async case.
+
+Accepted cost: a clip delivered but not yet pasted no longer survives a quit. The README said
+those files delete themselves and they didn't, so the honest fix is to make the code true and
+say plainly that quitting is the other deadline — not to soften the claim.
+
+## 2026-07-31 — Rewind distinguishes "stopped" from "still filling"
+
+`didStopWithError` stops cleanly and leaves `bufferEnabled` true — deliberate, and unchanged.
+But `RewindViewModel.state` derived `.empty` from `bufferEnabled && frames.isEmpty`, so after
+a monitor unplug or a fast user switch killed the stream, every future Rewind open said
+"Rewind just turned on. Give it a few seconds" — forever, with no recovery but toggling
+Settings off and on. Same class as the permission bug fixed earlier; that fix only covered the
+preflight branch.
+
+The missing input was the capture service's own state. `CaptureService.willBuffer` (`.starting
+|| .running`) is deliberately not `isBuffering`: `isBuffering` means "frames are arriving now",
+which is false for a second or two after every toggle and would report a healthy start as
+dead. `willBuffer` answers the question the empty state actually asks — will frames arrive? A
+`.stopped` state names the cause (a display change, a user switch) and the cure (toggle Rewind
+off and back on), since nothing retries the stream on its own.
+
+## 2026-07-31 — A refused clipboard write reports zero frames, not the frame count
+
+`ClipboardWriter.writeFileURLs` discarded the `Bool` from `writeObjects` and returned a change
+count regardless, so a refused write — with `clearContents()` already done, leaving the
+clipboard holding nothing — came back indistinguishable from a good one and the toast claimed
+frames the user didn't have. It now returns `Int?`, without `@discardableResult`, so the
+failure is impossible to drop by accident. `processAndCopy` maps `nil` to zero frames, which
+`confirmSelection` already surfaces as "Couldn't copy those frames. Try again."
+
+Cleanup is still scheduled on the failing path, before that return. The files exist either
+way, and a refused write is the one case where nothing on the clipboard will ever point at
+them — orphans with no deadline otherwise.
+
+## 2026-07-31 — Delivery detaches from its UI, and never cancels
+
+The Rewind popover is `.transient`, so the target app coming to the front closes it —
+mid-sequence, every time an auto-paste works. Cancelling the delivery from
+`popoverDidClose` would reach into a running keystroke sequence and cut its delays to
+nothing: ⌘V before the app can accept it and, with auto-send on, Return straight after,
+submitting an empty message. Keystrokes can't be recalled once posted; only the UI has
+anything left to stop doing. So `releaseFrames()` detaches instead — it bumps a session
+counter, and every UI mutation in `confirmSelection` is gated on the session it started in.
+The delivery finishes its keystrokes and then changes nothing on screen.
+
+## 2026-07-31 — Paste-sequence delays use a timer, not Task.sleep
+
+`Task.sleep` returns the *instant* its task is cancelled. Every pause in the paste sequence is
+load-bearing — the settle gives a just-activated app time to accept input, the paste-to-send
+gap keeps Return from firing before ⌘V has landed, and `waitForFrontmost`'s poll is the only
+thing keeping a ten-second cold-launch wait from being a hot loop. A cancelled caller would
+collapse all three to zero and auto-send an empty message into Claude, which there is no undo
+for. `try? await Task.sleep` is worse than plain `Task.sleep`, not better: it swallows the
+cancellation error and carries straight on to the keystroke.
+
+`DeliveryService.delay(_:)` wraps `DispatchQueue.main.asyncAfter` in a checked continuation
+instead. A timer has no cancellation to observe, which makes the delay a property of the
+sequence rather than of whoever happens to call it. Every delay on the keystroke path goes
+through it; `Task.sleep` survives only where an early return is harmless (the clipboard-clear
+timer, which additionally re-checks `Task.isCancelled` before clearing).
+
+## 2026-07-31 — Temp files are grouped per batch, one directory per delivered clip
+
+A clip's toast tells the user when its frames disappear, so delivering a second clip a minute
+later must not quietly move the first one's deadline out to match. Two timers over one shared
+directory couldn't honour that either: every clip numbers its frames from zero, so the second
+clip's `frame-000.jpg` overwrites the first's, and then the first's deadline deletes the
+second's frames. `TempFileManager` therefore opens a fresh batch directory on every
+`scheduleCleanup`, and each batch's deletion task closes over its own directory. The promise
+made on screen is per clip, so the unit of deletion is per clip.
+
+## 2026-07-31 — Batch pruning compares .path, not URL equality
+
+`removeBatch` pruned `writtenURLs` by comparing `$0.deletingLastPathComponent()` against the
+batch directory, and the comparison silently never matched:
+`deletingLastPathComponent()` always returns a directory-flagged URL (trailing slash), while
+`batchDir` never picked one up, since `appendingPathComponent(_:)` defaults a component to
+non-directory. Two URLs naming the same path that don't compare equal. Comparing `.path` on
+both sides strings the trailing slash away.
+
+Disk state looked correct throughout — the files really were deleted, only the bookkeeping
+list lagged — which is why `testCurrentSessionURLsPrunesExpiredBatch` exists as a separate
+test from `testEachBatchExpiresOnItsOwnDeadline`. The disk-state test passes either way.
+
 ## 2026-07-31 — Rewind clips go to the clipboard as file URLs; a single Snap stays pasteboard data
 
 A pasteboard item can hold one image as data, or several file references, but never
@@ -79,7 +206,7 @@ selection). `@Published`/`ObservableObject` became plain stored properties under
 start or stop buffering — that's `SettingsModel.bufferEnabled` and `AppDelegate`'s job) or the
 `OptimizationPipeline` — those are Task 6's concern once delivery is real.
 
-## 2026-07-31 — confirmSelection() is a deliberate stub pending Task 6
+## 2026-07-31 — confirmSelection() is a deliberate stub pending Task 6 (superseded — Task 6 landed; see "Rewind clips go to the clipboard as file URLs" above)
 
 Per this task's brief: delivering a range is the next task, so `confirmSelection()` sets the
 copied count, shows the toast, and closes the popover — the full interaction — without writing

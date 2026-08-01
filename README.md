@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-14%2B-000000)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-F05138)](Package.swift)
-[![Tests](https://img.shields.io/badge/tests-72-brightgreen)](Tests/)
+[![Tests](https://img.shields.io/badge/tests-74-brightgreen)](Tests/)
 [![Network](https://img.shields.io/badge/network%20code-none-success)](#privacy)
 
 A free, open-source **macOS menu bar app** that captures your screen and gets
@@ -87,6 +87,7 @@ until you deliver a clip — that's the moment the trimmed frames get written ou
 as temporary files, and those delete themselves on a timer rather than sitting
 around (5 minutes by default). Each clip gets its own temp directory, so
 delivering a second clip doesn't push out the first one's deletion deadline.
+Quitting Framegentic deletes them immediately, whichever comes first.
 
 A few other things worth knowing:
 
@@ -117,9 +118,10 @@ each one means before you rely on it:
 
 - Everything visible gets captured — passwords, messages, notifications, all of it. A Snap captures it once, at the instant you press the hotkey. Rewind captures it repeatedly, the whole time it's enabled, whether or not anything worth keeping is on screen.
 - Rewind's buffer holds only the last few minutes — old frames roll off as new ones arrive, bounded by whatever duration you've set in Settings — and it lives in memory only. Nothing about it touches disk while it's running, and closing the popover doesn't pause it: Rewind keeps recording in the background for as long as it's enabled, popover open or not. Turning it off, or quitting Framegentic, discards the buffer outright — there's nothing left over to find.
-- Delivering a clip is the one moment Rewind touches disk. The trimmed frames get written to a temporary directory and deleted again on a timer, 5 minutes by default. Each clip gets its own directory and its own deadline, so delivering a second clip can't push out the first one's.
+- Delivering a clip is the one moment Rewind touches disk. The trimmed frames get written to a temporary directory and deleted again on a timer, 5 minutes by default. Each clip gets its own directory and its own deadline, so delivering a second clip can't push out the first one's. Quitting Framegentic deletes them on the way out, so a clip delivered a minute before you quit doesn't outlive the app — the trade is that a clip you delivered but haven't pasted yet won't survive a quit either.
 - How long a capture stays on the clipboard depends on what it is and where it's going. A single Snap replaces whatever was there as image data: an auto-pasting target clears it a few seconds after a successful paste, **Clipboard only** leaves it until you copy something else since the clipboard *is* the delivery, and a failed delivery leaves it too, deliberately, so you can paste it yourself. A Rewind clip goes on as file references instead, and clears itself the moment those files are deleted — on the clip's own timer, whichever target you used and whether or not anything ever pasted it.
 - With auto-send on, a capture or a delivered clip is submitted the instant Return fires — for Claude, that means it reaches Anthropic's servers. There's no undo.
+- Rewind asks macOS for **Input Monitoring** when you turn it on, on top of Screen Recording. It uses it for one thing: a system-wide check of how long ago you last touched the keyboard or mouse, so capture speeds up while you're working and backs off while you're not. It reads event timing, never key contents, and nothing derived from it leaves memory. Decline it and Rewind keeps working at the slower idle rate — the backoff just stops adapting.
 
 Framegentic itself sends nothing anywhere. It has no network code — it captures, copies and, for targets that auto-paste, types.
 
@@ -164,6 +166,10 @@ A delivery target that auto-pastes (Claude, today) needs two more things:
 - The target app, installed.
 
 **Clipboard only** needs neither of those. That's the whole reason it's the default.
+
+Turning on Rewind asks for one more:
+
+- **Input Monitoring** — prompted the moment Rewind starts, because its activity check installs a keyboard event tap. That check is what makes capture speed up while you're working and back off while you're idle; it reads event timing only, never key contents. Declining it degrades rather than breaks: Rewind keeps buffering, just permanently at the idle rate. The log says so if you want to confirm which one you're getting.
 
 Grant permissions in System Settings → Privacy & Security, then quit and relaunch Framegentic. Neither takes effect on a running app. The menu bar shows **Grant…** shortcuts for whatever's missing — Accessibility's only appears once you've picked a target that needs it.
 
