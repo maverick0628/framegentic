@@ -1,0 +1,352 @@
+import AppKit
+import SwiftUI
+import FramegenticKit
+
+/// Reads CaptureService's buffer once, when the popover opens, rather than
+/// live. The buffer keeps recording underneath an open popover, so a live
+/// read would shift clipStart/clipEnd/playhead out from under a drag already
+/// in progress; re-querying CaptureService on every drag event would also
+/// mean an O(n) copy of the buffer per pixel of mouse movement. A snapshot
+/// taken once gives a stable range to scrub for as long as the popover stays
+/// open — the same thing FrameSnap's own CaptureViewModel.refreshFrames() did,
+/// carried forward rather than reinvented.
+@MainActor
+@Observable
+final class RewindViewModel {
+    enum State {
+        case disabled
+        case permissionDenied
+        case stopped
+        case empty
+        case ready
+    }
+
+    private let captureService: CaptureService
+    /// Injected, never constructed here. A `DeliveryService` of its own would
+    /// be a second in-flight guard that cannot see Snap's deliveries, which is
+    /// exactly the collision that guard exists to prevent.
+    private let delivery: DeliveryService
+    let settings: SettingsModel
+
+    private(set) var frames: [CapturedFrame] = []
+    var playheadIndex = 0
+    var clipStart = 0
+    var clipEnd = 0
+    private(set) var showToast = false
+    private(set) var copiedCount = 0
+    private(set) var isDelivering = false
+    private(set) var deliveryError: String?
+    private var deliverySession = 0
+
+    /// Set by RewindPopoverController. confirmSelection() calls it once the
+    /// toast has had time to be read, so the popover closes itself without
+    /// this type needing to know anything about NSPopover.
+    var onRequestClose: (() -> Void)?
+
+    init(captureService: CaptureService, delivery: DeliveryService, settings: SettingsModel) {
+        self.captureService = captureService
+        self.delivery = delivery
+        self.settings = settings
+    }
+
+    /// "Enabled with zero frames" is three different situations, and only one
+    /// of them resolves itself by waiting. Permission may be denied or
+    /// revoked; the stream may have died on its own (`didStopWithError` stops
+    /// cleanly and leaves `bufferEnabled` true, deliberately — but nothing
+    /// restarts it); or the buffer may genuinely be filling in. Both live
+    /// checks are read fresh every time, never cached on CaptureService, so
+    /// neither can answer stale.
+    var state: State {
+        guard settings.bufferEnabled else { return .disabled }
+        guard frames.isEmpty else { return .ready }
+        // The same preflight AppDelegate's menu uses for the identical question.
+        guard CGPreflightScreenCaptureAccess() else { return .permissionDenied }
+        guard captureService.willBuffer else { return .stopped }
+        return .empty
+    }
+
+    func refreshFrames() {
+        frames = captureService.currentFrames()
+        clipStart = 0
+        clipEnd = max(frames.count - 1, 0)
+        playheadIndex = clipEnd
+        deliveryError = nil
+    }
+
+    /// Called when the popover closes, so a decoded frame buffer doesn't sit
+    /// in memory between Rewind sessions. It also detaches this view model
+    /// from a delivery still in flight, so a result that arrives after the
+    /// popover is gone toasts to nobody.
+    ///
+    /// Detaches rather than cancels. This popover is transient, so the target
+    /// app coming to the front closes it — mid-sequence, every time an
+    /// auto-paste works. Cancelling from here would reach into that sequence
+    /// and cut its delays to nothing: ⌘V before the app can take it, and with
+    /// Send Automatically on, Return straight after, submitting nothing. The
+    /// keystrokes can't be recalled anyway; only the UI has anything left to
+    /// stop doing.
+    ///
+    /// Resetting `isDelivering` here means a reopen can call confirmSelection()
+    /// again before the detached delivery above has finished — this is a UI
+    /// flag, not a lock, and was never meant to serialise anything. That's
+    /// `DeliveryService`'s job: `deliverClip` rejects a second call while one
+    /// is still in flight, on the same instance this view model holds across
+    /// every open and close, so the overlap this allows at the UI layer can't
+    /// reach the pasteboard.
+    func releaseFrames() {
+        frames = []
+        deliverySession &+= 1
+        isDelivering = false
+        showToast = false
+    }
+
+    var currentFrame: CapturedFrame? {
+        guard frames.indices.contains(playheadIndex) else { return nil }
+        return frames[playheadIndex]
+    }
+
+    var selectedFrames: [CapturedFrame] {
+        guard clipStart <= clipEnd,
+              frames.indices.contains(clipStart),
+              frames.indices.contains(clipEnd) else { return [] }
+        return Array(frames[clipStart...clipEnd])
+    }
+
+    var selectedDurationText: String {
+        guard let first = selectedFrames.first, let last = selectedFrames.last else { return "0s" }
+        let seconds = Int(last.timestamp.timeIntervalSince(first.timestamp))
+        let minutes = seconds / 60
+        let remaining = seconds % 60
+        return minutes > 0 ? String(format: "%dm %02ds", minutes, remaining) : "\(seconds)s"
+    }
+
+    /// Delivers the trimmed range through DeliveryService, to whatever target
+    /// Settings has configured — the same activation-and-paste sequence a
+    /// snap uses. Every UI mutation below is gated on the session it started
+    /// in, so a delivery the user has already walked away from finishes its
+    /// keystrokes and then changes nothing on screen.
+    func confirmSelection() {
+        guard !isDelivering else { return }
+        let selected = selectedFrames
+        guard !selected.isEmpty else { return }
+        deliveryError = nil
+        isDelivering = true
+        let session = deliverySession
+        Task {
+            defer { if session == deliverySession { isDelivering = false } }
+            do {
+                let count = try await delivery.deliverClip(
+                    selected,
+                    to: settings.deliveryTarget,
+                    autoSend: settings.autoSend,
+                    ttl: TimeInterval(settings.autoDeleteTTLSeconds)
+                )
+                guard session == deliverySession else { return }
+                guard count > 0 else {
+                    deliveryError = "Couldn't copy those frames. Try again."
+                    return
+                }
+                copiedCount = count
+                showToast = true
+                try? await Task.sleep(for: .seconds(1.5))
+                guard session == deliverySession else { return }
+                showToast = false
+                onRequestClose?()
+            } catch {
+                Log.paste.error("Rewind delivery failed: \(error.localizedDescription, privacy: .public)")
+                guard session == deliverySession else { return }
+                deliveryError = error.localizedDescription
+            }
+        }
+    }
+}
+
+struct RewindPopoverView: View {
+    @Bindable var model: RewindViewModel
+    let onOpenSettings: () -> Void
+    let onOpenScreenRecordingSettings: () -> Void
+    let onEscape: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            switch model.state {
+            case .disabled:
+                RewindEmptyStateView(
+                    systemImage: "record.circle",
+                    title: "Rewind is off",
+                    message: "It keeps a rolling recording of your screen in memory, so you can scrub back and grab a moment after it happens. Turn it on in Settings.",
+                    actionTitle: "Open Settings",
+                    action: onOpenSettings
+                )
+            case .permissionDenied:
+                // Message text and button wording both come from the same
+                // established copy this app already uses for this exact
+                // condition (CaptureError's alert text, AppDelegate's menu
+                // item) rather than inventing a third phrasing of the same fact.
+                RewindEmptyStateView(
+                    systemImage: "video.slash",
+                    title: "Screen Recording is off",
+                    message: CaptureError.screenRecordingDenied.localizedDescription,
+                    actionTitle: "Grant Screen Recording…",
+                    action: onOpenScreenRecordingSettings
+                )
+            case .stopped:
+                // The one state with no self-healing path: the stream is gone
+                // and nothing retries it, so the message has to name the cause
+                // and the cure rather than ask for patience it won't reward.
+                RewindEmptyStateView(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Rewind stopped recording",
+                    message: "The screen recording ended on its own — unplugging a display or switching users does it. Turn Enable Rewind off and back on in Settings to start it again.",
+                    actionTitle: "Open Settings",
+                    action: onOpenSettings
+                )
+            case .empty:
+                RewindEmptyStateView(
+                    systemImage: "clock.arrow.circlepath",
+                    title: "Nothing captured yet",
+                    message: "Rewind just turned on. Give it a few seconds to start filling in, then reopen.",
+                    actionTitle: nil,
+                    action: nil
+                )
+                footer
+            case .ready:
+                FramePreview(frame: model.currentFrame, frameCount: model.frames.count)
+                TimelineScrubber(
+                    frameCount: model.frames.count,
+                    playhead: $model.playheadIndex,
+                    clipStart: $model.clipStart,
+                    clipEnd: $model.clipEnd,
+                    selectedDuration: model.selectedDurationText,
+                    oldestTimeAgo: model.frames.first?.formattedTimeAgo() ?? "0s"
+                )
+                if let deliveryError = model.deliveryError {
+                    Text(deliveryError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                confirmButton
+                footer
+            }
+
+            if model.showToast {
+                ToastView(frameCount: model.copiedCount, ttlMinutes: model.settings.autoDeleteTTLSeconds / 60)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(14)
+        .frame(width: 340)
+        .animation(.easeInOut(duration: 0.2), value: model.showToast)
+        .onExitCommand(perform: onEscape)
+    }
+
+    private var confirmButton: some View {
+        Button(action: { model.confirmSelection() }) {
+            Text(model.isDelivering ? "Copying…" : "Copy to Clipboard")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(model.selectedFrames.isEmpty || model.isDelivering)
+    }
+
+    private var footer: some View {
+        Button(action: onOpenSettings) {
+            Text("Buffer: \(model.settings.bufferWindowSeconds / 60) min · 1 frame / \(Int(model.settings.frameIntervalSeconds))s · Auto-delete: \(model.settings.autoDeleteTTLSeconds / 60) min")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct RewindEmptyStateView: View {
+    let systemImage: String
+    let title: String
+    let message: String
+    let actionTitle: String?
+    let action: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 28))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Owns the NSPopover and the focus dance an LSUIElement app needs to make it
+/// key. SettingsWindowController solves the identical problem for the
+/// settings NSWindow; this follows the same shape for a popover instead.
+@MainActor
+final class RewindPopoverController: NSObject, NSPopoverDelegate {
+    private let viewModel: RewindViewModel
+    private let popover: NSPopover
+
+    init(
+        viewModel: RewindViewModel,
+        onOpenSettings: @escaping () -> Void,
+        onOpenScreenRecordingSettings: @escaping () -> Void
+    ) {
+        self.viewModel = viewModel
+        let popover = NSPopover()
+        popover.behavior = .transient
+        self.popover = popover
+        super.init()
+
+        viewModel.onRequestClose = { [weak self] in self?.close() }
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(
+            rootView: RewindPopoverView(
+                model: viewModel,
+                onOpenSettings: onOpenSettings,
+                onOpenScreenRecordingSettings: onOpenScreenRecordingSettings,
+                onEscape: { [weak self] in self?.close() }
+            )
+        )
+    }
+
+    /// The hotkey both opens and closes Rewind, so a second press while it's
+    /// already open dismisses it rather than doing nothing.
+    func toggle(relativeTo statusItem: NSStatusItem) {
+        if popover.isShown {
+            close()
+        } else {
+            show(relativeTo: statusItem)
+        }
+    }
+
+    private func show(relativeTo statusItem: NSStatusItem) {
+        guard let button = statusItem.button else { return }
+        viewModel.refreshFrames()
+        // LSUIElement apps do not get focus from showing a popover alone, and
+        // without focus neither Escape nor the scrubber's drag gestures would
+        // arrive — the same fix SettingsWindowController uses for its window.
+        NSApp.activate()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func close() {
+        popover.close()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        viewModel.releaseFrames()
+    }
+}

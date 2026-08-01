@@ -1,5 +1,6 @@
 import XCTest
 import Carbon.HIToolbox
+import CoreGraphics
 @testable import FramegenticKit
 
 final class CaptureGeometryTests: XCTestCase {
@@ -324,51 +325,94 @@ final class HotKeyStoreTests: XCTestCase {
     }
 
     func testLoadReturnsDefaultWhenNothingStored() {
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testSaveThenLoadRoundTrips() {
         let store = HotKeyStore(defaults: defaults)
         let config = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
                                   carbonModifiers: UInt32(optionKey | shiftKey))
-        store.save(config)
-        XCTAssertEqual(store.load(), config)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), config)
+        store.save(config, for: .capture)
+        XCTAssertEqual(store.load(.capture), config)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), config)
     }
 
     func testLoadReturnsDefaultWhenStoredBlobIsCorrupt() {
-        defaults.set(Data("not json".utf8), forKey: HotKeyStore.defaultsKey)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        defaults.set(Data("not json".utf8), forKey: HotKeyStore.Shortcut.capture.rawValue)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadReturnsDefaultWhenStoredValueIsWrongType() {
-        defaults.set("⌘⇧6", forKey: HotKeyStore.defaultsKey)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        defaults.set("⌘⇧6", forKey: HotKeyStore.Shortcut.capture.rawValue)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     // A hostile `defaults write` is well-formed JSON that the app's own UI would
     // never produce. Without a validation pass, a bare key registers globally and
     // every "a" typed anywhere fires a capture.
     func testLoadReturnsDefaultWhenStoredShortcutHasNoRequiredModifier() throws {
-        try store(HotKeyConfig(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: 0))
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        try store(HotKeyConfig(keyCode: UInt32(kVK_ANSI_A), carbonModifiers: 0), for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadReturnsDefaultWhenStoredShortcutIsReserved() throws {
-        try store(HotKeyConfig(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)))
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), .default)
+        try store(HotKeyConfig(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)), for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), .default)
     }
 
     func testLoadStillReturnsAValidStoredShortcut() throws {
         let valid = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
                                  carbonModifiers: UInt32(optionKey | shiftKey))
-        try store(valid)
-        XCTAssertEqual(HotKeyStore(defaults: defaults).load(), valid)
+        try store(valid, for: .capture)
+        XCTAssertEqual(HotKeyStore(defaults: defaults).load(.capture), valid)
     }
 
     /// Writes past `save()` on purpose: the threat is a blob the app never wrote.
-    private func store(_ config: HotKeyConfig) throws {
-        defaults.set(try JSONEncoder().encode(config), forKey: HotKeyStore.defaultsKey)
+    private func store(_ config: HotKeyConfig, for shortcut: HotKeyStore.Shortcut) throws {
+        defaults.set(try JSONEncoder().encode(config), forKey: shortcut.rawValue)
+    }
+
+    // MARK: - Two independently-stored shortcuts
+
+    // The trap this test exists for: if Rewind's default were ever something the
+    // validator rejects, "Reset to Default" could never work for it — the same
+    // self-consistency guarantee HotKeyValidatorTests.testAcceptsItsOwnDefault
+    // pins for Capture's default.
+    func testRewindDefaultValidatesAndDiffersFromCaptureDefault() {
+        XCTAssertEqual(HotKeyValidator.validate(.rewindDefault), .valid)
+        XCTAssertNotEqual(HotKeyConfig.rewindDefault, HotKeyConfig.default)
+    }
+
+    func testEachShortcutFallsBackToItsOwnDefaultWhenUnset() {
+        let store = HotKeyStore(defaults: defaults)
+        XCTAssertEqual(store.load(.capture), .default)
+        XCTAssertEqual(store.load(.rewind), .rewindDefault)
+    }
+
+    func testSavingOneShortcutDoesNotDisturbTheOther() {
+        let store = HotKeyStore(defaults: defaults)
+        let captureConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C),
+                                         carbonModifiers: UInt32(optionKey | shiftKey))
+        store.save(captureConfig, for: .capture)
+        XCTAssertEqual(store.load(.capture), captureConfig)
+        XCTAssertEqual(store.load(.rewind), .rewindDefault)
+
+        let rewindConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_8),
+                                        carbonModifiers: UInt32(cmdKey | shiftKey))
+        store.save(rewindConfig, for: .rewind)
+        XCTAssertEqual(store.load(.rewind), rewindConfig)
+        XCTAssertEqual(store.load(.capture), captureConfig, "saving Rewind must not disturb Capture")
+    }
+
+    func testCorruptBlobForOneShortcutDoesNotAffectTheOther() throws {
+        let store = HotKeyStore(defaults: defaults)
+        let rewindConfig = HotKeyConfig(keyCode: UInt32(kVK_ANSI_8),
+                                        carbonModifiers: UInt32(cmdKey | shiftKey))
+        store.save(rewindConfig, for: .rewind)
+        defaults.set(Data("not json".utf8), forKey: HotKeyStore.Shortcut.capture.rawValue)
+
+        XCTAssertEqual(store.load(.capture), .default, "a corrupt Capture blob must fall back to Capture's default")
+        XCTAssertEqual(store.load(.rewind), rewindConfig, "a corrupt Capture blob must not affect Rewind")
     }
 }
 
@@ -408,5 +452,412 @@ final class DeliveryTargetTests: XCTestCase {
 
     func testIdsAreUnique() {
         XCTAssertEqual(Set(TargetRegistry.all.map(\.id)).count, TargetRegistry.all.count)
+    }
+}
+
+final class RingBufferTests: XCTestCase {
+    func testAppendAndRetrieve() {
+        var buffer = RingBuffer<Int>(capacity: 3)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.append(3)
+        XCTAssertEqual(buffer.count, 3)
+        XCTAssertEqual(buffer.allElements(), [1, 2, 3])
+    }
+
+    func testOverflowDropsOldest() {
+        var buffer = RingBuffer<Int>(capacity: 3)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.append(3)
+        buffer.append(4)
+        XCTAssertEqual(buffer.count, 3)
+        XCTAssertEqual(buffer.allElements(), [2, 3, 4])
+    }
+
+    func testEmptyBuffer() {
+        let buffer = RingBuffer<Int>(capacity: 5)
+        XCTAssertEqual(buffer.count, 0)
+        XCTAssertTrue(buffer.allElements().isEmpty)
+    }
+
+    func testSingleCapacity() {
+        var buffer = RingBuffer<Int>(capacity: 1)
+        buffer.append(10)
+        XCTAssertEqual(buffer.allElements(), [10])
+        buffer.append(20)
+        XCTAssertEqual(buffer.allElements(), [20])
+    }
+
+    func testClear() {
+        var buffer = RingBuffer<Int>(capacity: 5)
+        buffer.append(1)
+        buffer.append(2)
+        buffer.clear()
+        XCTAssertEqual(buffer.count, 0)
+        XCTAssertTrue(buffer.allElements().isEmpty)
+    }
+
+    func testSlice() {
+        var buffer = RingBuffer<Int>(capacity: 10)
+        for i in 0..<7 { buffer.append(i) }
+        let slice = buffer.slice(from: 2, to: 5)
+        XCTAssertEqual(slice, [2, 3, 4])
+    }
+
+    func testSliceAfterWrap() {
+        var buffer = RingBuffer<Int>(capacity: 4)
+        for i in 0..<6 { buffer.append(i) }
+        let all = buffer.allElements()
+        XCTAssertEqual(all, [2, 3, 4, 5])
+        let slice = buffer.slice(from: 1, to: 3)
+        XCTAssertEqual(slice, [3, 4])
+    }
+}
+
+final class DHashTests: XCTestCase {
+    private func makeImage(width: Int, height: Int, color: (UInt8, UInt8, UInt8)) throws -> CGImage {
+        let bitsPerComponent = 8
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[i]     = color.0
+            pixels[i + 1] = color.1
+            pixels[i + 2] = color.2
+            pixels[i + 3] = 255
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: bitsPerComponent, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testIdenticalImagesHaveZeroDistance() throws {
+        let img = try makeImage(width: 100, height: 100, color: (128, 128, 128))
+        let hash1 = DHash.hash(img)
+        let hash2 = DHash.hash(img)
+        XCTAssertEqual(DHash.hammingDistance(hash1, hash2), 0)
+    }
+
+    private func makeGradientImage(width: Int, height: Int, ascending: Bool) throws -> CGImage {
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let t = Float(col) / Float(width - 1)
+                let intensity = UInt8(ascending ? t * 255 : (1 - t) * 255)
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDifferentImagesHaveNonZeroDistance() throws {
+        let img1 = try makeGradientImage(width: 100, height: 100, ascending: true)
+        let img2 = try makeGradientImage(width: 100, height: 100, ascending: false)
+        let hash1 = DHash.hash(img1)
+        let hash2 = DHash.hash(img2)
+        XCTAssertGreaterThan(DHash.hammingDistance(hash1, hash2), 0)
+    }
+
+    func testSimilarityAboveThreshold() throws {
+        let img = try makeImage(width: 100, height: 100, color: (100, 100, 100))
+        let hash1 = DHash.hash(img)
+        let hash2 = DHash.hash(img)
+        XCTAssertTrue(DHash.areSimilar(hash1, hash2, threshold: 0.9))
+    }
+
+    func testHashIs64Bits() throws {
+        let img = try makeImage(width: 200, height: 200, color: (50, 100, 150))
+        // Erased to Any so the check is a real runtime test, not a tautology
+        // the compiler can already prove from hash's static UInt64 return type.
+        let hash: Any = DHash.hash(img)
+        XCTAssertTrue(hash is UInt64)
+    }
+}
+
+final class ImageProcessorTests: XCTestCase {
+    private func makeImage(width: Int, height: Int) throws -> CGImage {
+        var pixels = [UInt8](repeating: 128, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDownsampleReducesWidth() throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let result = ImageProcessor.downsample(img, maxWidth: 1024)
+        XCTAssertEqual(result.width, 1024)
+        XCTAssertEqual(result.height, 640)
+    }
+
+    func testDownsampleSkipsSmallImages() throws {
+        let img = try makeImage(width: 800, height: 600)
+        let result = ImageProcessor.downsample(img, maxWidth: 1024)
+        XCTAssertEqual(result.width, 800)
+        XCTAssertEqual(result.height, 600)
+    }
+
+    func testJPEGEncodeProducesData() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let data = try XCTUnwrap(ImageProcessor.encodeJPEG(img, quality: 0.75))
+        XCTAssertGreaterThan(data.count, 0)
+    }
+
+    func testJPEGDataStartsWithFFD8() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let data = try XCTUnwrap(ImageProcessor.encodeJPEG(img, quality: 0.75))
+        XCTAssertEqual(data[0], 0xFF)
+        XCTAssertEqual(data[1], 0xD8)
+    }
+}
+
+final class OptimizationPipelineTests: XCTestCase {
+    private func makeImage(width: Int, height: Int, brightness: UInt8 = 128) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[i]     = brightness
+            pixels[i + 1] = brightness
+            pixels[i + 2] = brightness
+            pixels[i + 3] = 255
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeGradientImage(width: Int, height: Int, ascending: Bool) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let t = Float(col) / Float(width - 1)
+                let intensity = UInt8(ascending ? t * 255 : (1 - t) * 255)
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    private func makeCheckerboardImage(width: Int, height: Int) throws -> CGImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for col in 0..<width {
+                let intensity: UInt8 = (col % 2 == 0) ? 255 : 0
+                let base = (row * width + col) * 4
+                pixels[base]     = intensity
+                pixels[base + 1] = intensity
+                pixels[base + 2] = intensity
+                pixels[base + 3] = 255
+            }
+        }
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        return try XCTUnwrap(context.makeImage())
+    }
+
+    func testDedupRemovesDuplicateFrames() throws {
+        let img = try makeImage(width: 100, height: 100)
+        let frames = (0..<5).map { _ in CapturedFrame(image: img) }
+        let deduped = OptimizationPipeline.dedup(frames, threshold: 0.9)
+        XCTAssertEqual(deduped.count, 2, "Should keep only first and last of identical frames")
+    }
+
+    func testDedupKeepsDifferentFrames() throws {
+        let frames = [
+            CapturedFrame(image: try makeGradientImage(width: 100, height: 100, ascending: true)),
+            CapturedFrame(image: try makeCheckerboardImage(width: 100, height: 100)),
+            CapturedFrame(image: try makeGradientImage(width: 100, height: 100, ascending: false)),
+        ]
+        let deduped = OptimizationPipeline.dedup(frames, threshold: 0.9)
+        XCTAssertEqual(deduped.count, 3)
+    }
+
+    func testProcessProducesFileURLs() async throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let frames = [
+            CapturedFrame(image: img),
+            CapturedFrame(image: try makeImage(width: 2560, height: 1600, brightness: 50)),
+        ]
+        let pipeline = OptimizationPipeline()
+        let urls = await pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        XCTAssertEqual(urls.count, 2)
+        for url in urls {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            let data = try Data(contentsOf: url)
+            XCTAssertEqual(data[0], 0xFF)
+            XCTAssertEqual(data[1], 0xD8)
+        }
+        await pipeline.cleanup()
+    }
+
+    func testProcessDownsamples() async throws {
+        let img = try makeImage(width: 2560, height: 1600)
+        let frames = [CapturedFrame(image: img)]
+        let pipeline = OptimizationPipeline()
+        let urls = await pipeline.process(frames: frames, maxWidth: 1024, jpegQuality: 0.75, dedupThreshold: 0.9)
+        await pipeline.cleanup()
+        XCTAssertFalse(urls.isEmpty)
+    }
+
+    // The quit-time path AppDelegate.applicationWillTerminate takes. Its whole
+    // point is finishing without a suspension, so it is asserted immediately
+    // after the call, with nothing awaited in between.
+    func testRemoveSessionDirectoryDeletesDeliveredFiles() async throws {
+        let img = try makeImage(width: 400, height: 300)
+        let pipeline = OptimizationPipeline()
+        let urls = await pipeline.process(frames: [CapturedFrame(image: img)])
+        let first = try XCTUnwrap(urls.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+
+        pipeline.removeSessionDirectory()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+    }
+}
+
+// TempFileManager is a plain actor, so write/cleanupAll are async and each
+// test needs to be too. `defer` can't help with teardown here — `await` is
+// not permitted in a defer body — so cleanup is registered via XCTest's own
+// async addTeardownBlock, which (like defer) still runs after a failed
+// assertion or a thrown error, just without the language-level restriction.
+final class TempFileManagerTests: XCTestCase {
+    func testWriteCreatesFile() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let data = Data("test".utf8)
+        let url = try await manager.write(data, filename: "test.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testWriteCreatesSessionDirectory() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let data = Data("test".utf8)
+        let url = try await manager.write(data, filename: "test.jpg")
+        let sessionDir = url.deletingLastPathComponent()
+        var isDir: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sessionDir.path, isDirectory: &isDir))
+        XCTAssertTrue(isDir.boolValue)
+    }
+
+    func testWriteMultipleFiles() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let url1 = try await manager.write(Data("a".utf8), filename: "frame-0.jpg")
+        let url2 = try await manager.write(Data("b".utf8), filename: "frame-1.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url1.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url2.path))
+        XCTAssertEqual(url1.deletingLastPathComponent(), url2.deletingLastPathComponent())
+    }
+
+    func testCleanupAllRemovesFiles() async throws {
+        let manager = TempFileManager()
+        let url = try await manager.write(Data("x".utf8), filename: "test.jpg")
+        await manager.cleanupAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testSessionDirectoryInTmpDir() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let url = try await manager.write(Data("x".utf8), filename: "test.jpg")
+        let tmpDir = FileManager.default.temporaryDirectory.path
+        XCTAssertTrue(url.path.hasPrefix(tmpDir))
+        XCTAssertTrue(url.path.contains("framegentic"))
+    }
+
+    // Quit-time cleanup can't await — see removeSessionDirectory() — so the
+    // one path that runs at termination is the one worth pinning.
+    func testRemoveSessionDirectoryDeletesWithoutSuspending() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+        let url = try await manager.write(Data("x".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 3600)
+
+        manager.removeSessionDirectory()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Files must be gone the moment the call returns, not after a hop")
+    }
+
+    // The user is told when each clip disappears, so a later clip must not
+    // move an earlier one's deadline — and must not land on its filenames,
+    // since every clip numbers its frames from zero.
+    func testEachBatchExpiresOnItsOwnDeadline() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+
+        let first = try await manager.write(Data("a".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 0.1)
+        let second = try await manager.write(Data("b".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 60)
+
+        XCTAssertNotEqual(first, second, "A later batch must not reuse an earlier batch's paths")
+
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path),
+                       "The first batch should expire on its own deadline")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path),
+                      "The second batch should still be waiting on its own")
+    }
+
+    // A URL equality check here (deletingLastPathComponent() == batchDir)
+    // silently never matches, because deletingLastPathComponent() always
+    // returns a directory-flagged URL and batchDir never was one — verified
+    // separately, outside this suite, with a standalone URL comparison. That
+    // makes this the only test that would have caught it: disk state alone
+    // (as in testEachBatchExpiresOnItsOwnDeadline above) looks correct either
+    // way, since the files really are deleted — only the bookkeeping list lags.
+    func testCurrentSessionURLsPrunesExpiredBatch() async throws {
+        let manager = TempFileManager()
+        addTeardownBlock { await manager.cleanupAll() }
+
+        let first = try await manager.write(Data("a".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 0.1)
+        let second = try await manager.write(Data("b".utf8), filename: "frame-000.jpg")
+        await manager.scheduleCleanup(after: 60)
+
+        try await Task.sleep(for: .milliseconds(500))
+
+        let remaining = await manager.currentSessionURLs()
+        XCTAssertFalse(remaining.contains(first),
+                       "An expired batch's files must be pruned once deleted from disk, not just forgotten on disk")
+        XCTAssertTrue(remaining.contains(second),
+                      "A batch still waiting on its own deadline must stay listed")
     }
 }

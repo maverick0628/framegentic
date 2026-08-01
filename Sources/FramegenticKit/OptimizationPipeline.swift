@@ -1,0 +1,92 @@
+import Foundation
+import CoreGraphics
+
+// A plain actor, not @MainActor: this type does JPEG encoding and file I/O.
+// Nothing calls it yet, but the capture loop (a later task) will push every
+// captured frame through here at a sub-second interval, and this app is a
+// menu bar app whose scrubber UI can't afford to contend with that on the
+// main thread. Actor isolation still serialises access to tempFileManager
+// (closing the same race @MainActor would have), just without pinning the
+// work to a specific thread.
+public actor OptimizationPipeline {
+    private let tempFileManager = TempFileManager()
+
+    public init() {}
+
+    // Pure and stateless (unlike the rest of this type), so it stays callable
+    // without hopping onto the actor.
+    public nonisolated static func dedup(_ frames: [CapturedFrame], threshold: Double) -> [CapturedFrame] {
+        guard frames.count > 2 else { return frames }
+
+        let hashes = frames.map { DHash.hash($0.image) }
+        var keep = [Bool](repeating: false, count: frames.count)
+        keep[0] = true
+        keep[frames.count - 1] = true
+
+        for i in 1..<(frames.count - 1) {
+            if !DHash.areSimilar(hashes[i - 1], hashes[i], threshold: threshold) {
+                keep[i] = true
+            }
+        }
+
+        return zip(frames, keep).compactMap { $0.1 ? $0.0 : nil }
+    }
+
+    public func process(
+        frames: [CapturedFrame],
+        maxWidth: Int = 1024,
+        jpegQuality: CGFloat = 0.75,
+        dedupThreshold: Double = 0.9
+    ) async -> [URL] {
+        let deduped = Self.dedup(frames, threshold: dedupThreshold)
+        var urls: [URL] = []
+
+        for (index, frame) in deduped.enumerated() {
+            let downsampled = ImageProcessor.downsample(frame.image, maxWidth: maxWidth)
+            guard let jpegData = ImageProcessor.encodeJPEG(downsampled, quality: jpegQuality) else { continue }
+            let filename = String(format: "frame-%03d.jpg", index)
+            guard let url = try? await tempFileManager.write(jpegData, filename: filename) else { continue }
+            urls.append(url)
+        }
+
+        return urls
+    }
+
+    /// Writes the frames out and puts them on the clipboard, reporting how many
+    /// landed and the change count that identifies them.
+    ///
+    /// The change count comes back from the write rather than being re-read by
+    /// the caller: the caller is on another actor, and anything a third party
+    /// copied during that hop would otherwise be mistaken for this clip and
+    /// expire on its clock.
+    public func processAndCopy(
+        frames: [CapturedFrame],
+        maxWidth: Int = 1024,
+        jpegQuality: CGFloat = 0.75,
+        dedupThreshold: Double = 0.9,
+        ttl: TimeInterval = 300
+    ) async -> (frames: Int, changeCount: Int) {
+        let urls = await process(frames: frames, maxWidth: maxWidth, jpegQuality: jpegQuality, dedupThreshold: dedupThreshold)
+        guard !urls.isEmpty else { return (frames: 0, changeCount: 0) }
+        let changeCount = ClipboardWriter.writeFileURLs(urls)
+        // Scheduled whether or not the write took. The files exist either way,
+        // and a refused write is the one case where nothing on the clipboard
+        // will ever point at them — orphans with no deadline otherwise.
+        await tempFileManager.scheduleCleanup(after: ttl)
+        // Zero frames is how the caller learns the clipboard doesn't have
+        // them, so the toast can't claim a delivery that didn't land.
+        guard let changeCount else { return (frames: 0, changeCount: 0) }
+        return (frames: urls.count, changeCount: changeCount)
+    }
+
+    public func cleanup() async {
+        await tempFileManager.cleanupAll()
+    }
+
+    /// The quit-time counterpart to `cleanup()`. Same files, no suspension —
+    /// see `TempFileManager.removeSessionDirectory()` for why that matters at
+    /// termination.
+    public nonisolated func removeSessionDirectory() {
+        tempFileManager.removeSessionDirectory()
+    }
+}

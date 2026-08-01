@@ -12,7 +12,7 @@ struct SettingsView: View {
                 HStack(spacing: 10) {
                     ShortcutRecorderField(
                         idleTitle: model.hotKeyConfig.displayString,
-                        onRecord: { model.apply($0) },
+                        onRecord: { model.apply($0, for: .capture) },
                         onBeginRecording: { model.beginRecording() },
                         onEndRecording: { model.endRecording() }
                     )
@@ -72,6 +72,58 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Rewind")
+                    .font(.headline)
+
+                Toggle("Enable Rewind", isOn: $model.bufferEnabled)
+
+                Text("Turning this on starts continuously capturing your screen into memory, so you can scrub back through the last few minutes. Frames stay in memory only — nothing touches disk until you deliver one.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.bufferEnabled {
+                    Picker("Buffer duration", selection: $model.bufferWindowSeconds) {
+                        Text("1 min").tag(60)
+                        Text("2 min").tag(120)
+                        Text("3 min").tag(180)
+                        Text("5 min").tag(300)
+                    }
+                    .pickerStyle(.segmented)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Rewind Shortcut")
+                            .font(.subheadline)
+                        HStack(spacing: 10) {
+                            ShortcutRecorderField(
+                                idleTitle: model.rewindHotKeyConfig.displayString,
+                                onRecord: { model.apply($0, for: .rewind) },
+                                onBeginRecording: { model.beginRecording() },
+                                onEndRecording: { model.endRecording() }
+                            )
+                            .frame(width: 200, height: 26)
+
+                            Button("Reset to Default") { model.resetRewindToDefault() }
+                                .disabled(!model.canResetRewindToDefault)
+                        }
+                        if let error = model.rewindShortcutError {
+                            Text(error)
+                                .font(.callout)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if !model.rewindHotKeyRegistered {
+                            Text("\(model.rewindHotKeyConfig.displayString) could not be registered. Pick another.")
+                                .font(.callout)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
             }
         }
         .padding(20)
