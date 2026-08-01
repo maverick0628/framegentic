@@ -1,5 +1,17 @@
 .build/
-.DS_Store
-*.app
 .swiftpm/
+*.app
+.DS_Store
+
+# Agent scratch. Both were ignored only outside the repo — .claude/ via
+# .git/info/exclude and .letta/ via a global gitignore — so a fresh clone
+# tracked them. Ignore rules that matter have to live in the repo.
+.claude/
+.letta/
 .full-review/
+
+# Written into the repo root by the release steps in .github/workflows/ci.yml.
+# CI runners are ephemeral, but running those steps by hand is not.
+cert.p12
+key.p8
+*.zip
