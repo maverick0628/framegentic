@@ -27,6 +27,6 @@
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 Duncan Smith. MIT License.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Framegentic captures your screen so you can send it to an AI assistant.</string>
+    <string>Framegentic captures your screen, including continuously while Rewind is on, so you can send it to an AI assistant.</string>
 </dict>
 </plist>

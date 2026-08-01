@@ -1,5 +1,19 @@
 # Decisions
 
+## 2026-07-31 — Rewind clips go to the clipboard as file URLs; a single Snap stays pasteboard data
+
+A pasteboard item can hold one image as data, or several file references, but never
+several images — so a multi-frame clip had no way to reuse Snap's PNG-`Data`-on-
+`NSPasteboardItem` path. `OptimizationPipeline.processAndCopy` writes each kept frame
+out as a temp JPEG and hands the resulting URLs to `ClipboardWriter.writeFileURLs`;
+`CaptureService.captureToClipboard` is untouched and still writes a single Snap as PNG
+data. Less a fresh decision than confirming one already made: FrameSnap's
+`ClipboardWriter` wrote file URLs before this merge started, so the multi-frame case
+arrived with a working answer to port rather than a gap to design. Both shapes route
+through the same `DeliveryService.activateAndPaste` once something is on the
+clipboard, so Clipboard only still writes and stops, and an auto-pasting target still
+activates, guards and pastes, regardless of which one delivered it.
+
 ## 2026-07-31 — Rewind's permission-denied state reuses CGPreflightScreenCaptureAccess() directly, no new CaptureService state
 
 Fix round 1 on Task 5 caught that `.empty` covered two different situations: a buffer
@@ -73,6 +87,20 @@ anything to the clipboard. Nothing downstream depends on it doing real work yet.
 reviewer so a Rewind session that shows "3 frames copied" but leaves the clipboard untouched
 isn't mistaken for a bug before Task 6 lands.
 
+## 2026-07-31 — Rewind gets its own hotkey binding rather than a tap-versus-hold on Snap's
+
+Carbon's `RegisterEventHotKey` delivers a single event on key-down and nothing else —
+it has no notion of "held for N seconds," so distinguishing tap-Snap from hold-Rewind
+on one binding would mean layering timer-based hold detection on top of an API that
+was never built to report duration, for a worse result than just registering a second
+combo. Rewind gets its own `HotKeyConfig` (`.rewindDefault`, ⇧⌘7) instead, sequential
+with Snap's ⇧⌘6. The cost lands in `SettingsModel` and `HotKeyManager`: recording
+either shortcut has to suspend both registrations, since Carbon consumes a combo
+before AppKit's recorder ever sees the keystroke, and `apply(_:for:)` has to reject a
+candidate that collides with the app's *other* current binding — problems a single
+hold-modified shortcut would not have had, accepted in exchange for not building hold
+detection from scratch.
+
 ## 2026-07-31 — Rewind's shortcut collision check lives in SettingsModel, not HotKeyValidator
 
 HotKeyValidator only knows the reserved-system-shortcut table; it has no notion of the
@@ -110,6 +138,20 @@ Carbon consumes a registered combo before AppKit ever sees the keystroke, so lea
 other shortcut live during recording would let it fire instead of being captured. Simpler
 than threading "which shortcut is being recorded" through SettingsModel, and the two
 recorder fields can't be interacted with simultaneously in the UI anyway.
+
+## 2026-07-31 — Buffer duration is configurable; sampling interval and auto-delete TTL are stored but have no UI
+
+`SettingsModel` persists three buffer-related numbers — `bufferWindowSeconds`,
+`frameIntervalSeconds`, `autoDeleteTTLSeconds` — but `SettingsView` only exposes the
+first, as a four-option segmented `Picker` (1/2/3/5 min) that appears once
+`bufferEnabled` is on. Keeping duration configurable cost nothing: FrameSnap's
+`AppSettings` already persisted it, so "fixed or configurable" had a working default
+to keep rather than a UI to invent. Frame interval and TTL stay out of the UI on
+purpose — two more interacting knobs (how often it samples, how long a delivered
+clip survives before its temp files vanish) is a settings screen nobody would
+understand relative to what it buys them, so both keep their stored defaults (10s
+interval, 300s TTL, matching `AppSettings`'s registered defaults) and are only
+reachable by editing `UserDefaults` directly.
 
 ## 2026-07-31 — TempFileManager and OptimizationPipeline are plain actors, not @MainActor (supersedes the entry below)
 
