@@ -1,6 +1,6 @@
 # Framegentic — Public Release Sweep
 
-**Status:** in progress, 2026-08-01
+**Status:** done, 2026-08-01 (PR #8)
 **Goal:** get the repo ready to be flipped public, following the pattern used for
 CipherGate and the other four OSS repos (audit → fix → verify on a fresh clone).
 
@@ -27,12 +27,12 @@ Clean, and deliberately left alone:
 
 ## Tasks
 
-- [ ] **1. Fix the GitHub description and topics** — drop the Rewind clause, drop `rewind` and `screen-recording`.
-- [ ] **2. Close the `.gitignore` gaps** — `.claude/`, `.letta/`, and the release artifacts. Verify by fresh clone, not by `git status` here.
-- [ ] **3. Clear the executed Rewind plan from PLAN.md** — done as part of writing this file. Its Completed summary is the archive, the design spec holds the reasoning, and git history holds the rest.
-- [ ] **4. Pin the CI toolchain** — `maxim-lobanov/setup-xcode` at a fixed version, so a contributor's PR fails for their reasons and not the runner's.
-- [ ] **5. Verify on a fresh clone** — clone from the remote into a temp dir, build, test, bundle. This is the check that catches ignore-rule mistakes; nothing local can.
-- [ ] **6. Flag what needs Duncan** — the six release secrets, the fresh-VM gate, and the visibility flip itself.
+- [x] **1. Fix the GitHub description and topics** — drop the Rewind clause, drop `rewind` and `screen-recording`.
+- [x] **2. Close the `.gitignore` gaps** — `.claude/`, `.letta/`, and the release artifacts. Verify by fresh clone, not by `git status` here.
+- [x] **3. Clear the executed Rewind plan from PLAN.md** — done as part of writing this file. Its Completed summary is the archive, the design spec holds the reasoning, and git history holds the rest.
+- [x] **4. Pin the CI toolchain** — done with `xcode-select` rather than a third-party action, so a public repo takes on no extra supply-chain surface. CI now reports **Xcode 16.4 / Swift 6.1.2 / macOS SDK 15.5** in every run, against 26.5 locally — the drift is now a printed number instead of a mystery. `actions/checkout` bumped to v5 along the way; v4's Node 20 deprecation was warning on every green run.
+- [x] **5. Verify on a fresh clone** — done: 49 tracked files, nothing sensitive, no absolute paths; `swift build -c release`, `swift test` (74/74) and `scripts/build.sh` all pass, and a full build leaves the clone `git status` clean.
+- [x] **6. Flag what needs Duncan** — the six release secrets, the fresh-VM gate, and the visibility flip itself.
 
 **Not doing without a decision:** rewriting history to remove the ClaudeShot name. It appears in old file paths and commit messages. Low risk — nominative use, and the rename is documented — but it is Duncan's call, and history rewrites on this account have gone badly before.
 
