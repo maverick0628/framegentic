@@ -1,5 +1,31 @@
 # Decisions
 
+## 2026-07-31 — Rewind ships disabled behind one flag, code kept
+
+Rewind's output failed its first real use. A delivered clip lands in Claude as several images
+attached to one message, and a row of thumbnails turns out to be a bad way to show an agent what
+happened — you cannot read any single frame, and the sequence carries less than one well-chosen
+screenshot. That is not a tuning problem: the frames go out at 1024px, the same width a Snap
+uses, so there is no parameter to raise.
+
+Cut rather than iterate, because the thing to fix is the format and nobody knows yet what
+replaces it. Deleting the code would have been the wrong version of that. The buffer, the
+perceptual-hash dedup, the idle backoff and the temp-file lifecycle are all sound and all tested
+— what failed sits at the last inch of the pipeline. So the feature is gated on
+`SettingsModel.isRewindAvailable = false` and everything behind it stays in the tree.
+
+The flag hangs off `bufferEnabled` rather than being checked by each consumer, because
+`bufferEnabled` was already the one gate every Rewind path asked. Making it read
+`isRewindAvailable && stored` disables capture, the popover's contents and the settings
+sub-controls in one move, and the stored preference survives untouched for whoever flips it back.
+Only three things needed touching directly: hotkey registration (both sites — `endRecording()`
+re-registers too, and would otherwise have resurrected the combo after any shortcut edit), the
+settings section, and the menu's "Rewind hotkey unavailable" warning, which would otherwise have
+become permanent by describing a deliberate non-registration as a collision.
+
+The README says Rewind is parked and why, rather than dropping the section. A public repo with a
+`RewindPopover.swift` in it should explain itself.
+
 ## 2026-07-31 — Concurrency annotations state their reasoning in-place, not per-SDK
 
 The branch built clean here and failed to compile on the runner, for the second time on this

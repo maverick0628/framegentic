@@ -68,60 +68,15 @@ system screenshot shortcut, so the reset will be refused there — pick somethin
 
 It runs as a background accessory (`LSUIElement`), so there's no Dock icon, just a menu bar item.
 
-## Rewind
-
-Rewind is a second mode, off by default. Flip **Enable Rewind** on in Settings and
-Framegentic starts continuously capturing your screen into a rolling buffer in
-memory — not a single shot like Snap, a live recording of the last few minutes.
-
-Press its hotkey (`⇧⌘7` by default, changed the same way as Snap's) and a popover
-opens with a timeline scrubber over that buffer. Drag to trim the range you want,
-then deliver it to whatever target you've picked in Settings. A clip goes to the
-clipboard as file references, not image data, since one pasteboard entry can hold
-several files but only one image. Delivery then follows the same path as a Snap
-capture: **Clipboard only** writes and stops, an auto-pasting target activates,
-waits for focus, and pastes.
-
-Frames live in memory only, the whole time the buffer runs. Nothing touches disk
-until you deliver a clip — that's the moment the trimmed frames get written out
-as temporary files, and those delete themselves on a timer rather than sitting
-around (5 minutes by default). Each clip gets its own temp directory, so
-delivering a second clip doesn't push out the first one's deletion deadline.
-Quitting Framegentic deletes them immediately, whichever comes first.
-
-A few other things worth knowing:
-
-- Near-duplicate frames are dropped as they're sampled, using a perceptual hash
-  — a screen that isn't changing doesn't fill the buffer with copies of itself.
-- Capture speeds up while you're active and backs off automatically once you've
-  been idle a few seconds. That uses a system-wide check of keyboard and mouse
-  timing, never content, and degrades gracefully to the slower rate if Input
-  Monitoring isn't granted.
-- Buffer duration (1, 2, 3 or 5 minutes) is configurable in Settings. Sampling
-  interval and the auto-delete timer are stored settings too, but deliberately
-  have no UI — two more interacting knobs than this settings screen needs.
-- If Screen Recording permission is denied or revoked, opening the popover says
-  so directly and offers to open System Settings, instead of telling you to
-  wait for a buffer that's never going to fill.
-
-Turn it off the same toggle you turned it on with. Buffering stops immediately
-and the buffer is discarded — Rewind is a live recording, not a saved document.
-With the buffer off, its hotkey still works: the popover opens and explains
-that Rewind is off, rather than showing you nothing.
-
 ## Privacy
 
-Framegentic captures your screen two ways. Snap grabs it once, when you press
-its hotkey. Rewind, once you turn it on, captures continuously into memory so
-you can scrub back and grab a moment after it's already happened. Know what
-each one means before you rely on it:
+Framegentic captures your screen one way: a single grab of the main display at
+the instant you press the hotkey. Nothing runs between keypresses. Know what
+that means before you rely on it:
 
-- Everything visible gets captured — passwords, messages, notifications, all of it. A Snap captures it once, at the instant you press the hotkey. Rewind captures it repeatedly, the whole time it's enabled, whether or not anything worth keeping is on screen.
-- Rewind's buffer holds only the last few minutes — old frames roll off as new ones arrive, bounded by whatever duration you've set in Settings — and it lives in memory only. Nothing about it touches disk while it's running, and closing the popover doesn't pause it: Rewind keeps recording in the background for as long as it's enabled, popover open or not. Turning it off, or quitting Framegentic, discards the buffer outright — there's nothing left over to find.
-- Delivering a clip is the one moment Rewind touches disk. The trimmed frames get written to a temporary directory and deleted again on a timer, 5 minutes by default. Each clip gets its own directory and its own deadline, so delivering a second clip can't push out the first one's. Quitting Framegentic deletes them on the way out, so a clip delivered a minute before you quit doesn't outlive the app — the trade is that a clip you delivered but haven't pasted yet won't survive a quit either.
-- How long a capture stays on the clipboard depends on what it is and where it's going. A single Snap replaces whatever was there as image data: an auto-pasting target clears it a few seconds after a successful paste, **Clipboard only** leaves it until you copy something else since the clipboard *is* the delivery, and a failed delivery leaves it too, deliberately, so you can paste it yourself. A Rewind clip goes on as file references instead, and clears itself the moment those files are deleted — on the clip's own timer, whichever target you used and whether or not anything ever pasted it.
-- With auto-send on, a capture or a delivered clip is submitted the instant Return fires — for Claude, that means it reaches Anthropic's servers. There's no undo.
-- Rewind asks macOS for **Input Monitoring** when you turn it on, on top of Screen Recording. It uses it for one thing: a system-wide check of how long ago you last touched the keyboard or mouse, so capture speeds up while you're working and backs off while you're not. It reads event timing, never key contents, and nothing derived from it leaves memory. Decline it and Rewind keeps working at the slower idle rate — the backoff just stops adapting.
+- Everything visible gets captured — passwords, messages, notifications, all of it.
+- How long a capture stays on the clipboard depends on what it is and where it's going. A single Snap replaces whatever was there as image data: an auto-pasting target clears it a few seconds after a successful paste, **Clipboard only** leaves it until you copy something else since the clipboard *is* the delivery, and a failed delivery leaves it too, deliberately, so you can paste it yourself.
+- With auto-send on, a capture is submitted the instant Return fires — for Claude, that means it reaches Anthropic's servers. There's no undo.
 
 Framegentic itself sends nothing anywhere. It has no network code — it captures, copies and, for targets that auto-paste, types.
 
@@ -140,16 +95,13 @@ otool -L /Applications/Framegentic.app/Contents/MacOS/Framegentic | grep -i -E '
 | Screenshot to an AI chat | one keypress | 5 steps via Desktop | 3–4 steps via clipboard |
 | Region select, annotation | **no** | yes | yes |
 | Screenshot history | **no** | Desktop files | yes |
-| Grab a screen from a few minutes ago | **yes** | no | no |
 | Price | free, MIT | built in | paid / freemium |
 | Sends data anywhere | never | never | varies |
 
 This is deliberately not a general screenshot tool. It captures the full main
-display and does exactly one thing with it — plus, with Rewind on, a short
-rolling buffer of what just happened. If you want region select, annotation or
-a browsable history, use a real screenshot app; they are better at it, and this
-is not trying to compete. Rewind's buffer isn't that kind of history: a few
-minutes of memory, not an archive, gone the moment you turn it off or quit.
+display and does exactly one thing with it. If you want region select,
+annotation or a browsable history, use a real screenshot app; they are better at
+it, and this is not trying to compete.
 
 ## Requirements
 
@@ -166,10 +118,6 @@ A delivery target that auto-pastes (Claude, today) needs two more things:
 - The target app, installed.
 
 **Clipboard only** needs neither of those. That's the whole reason it's the default.
-
-Turning on Rewind asks for one more:
-
-- **Input Monitoring** — prompted the moment Rewind starts, because its activity check installs a keyboard event tap. That check is what makes capture speed up while you're working and back off while you're idle; it reads event timing only, never key contents. Declining it degrades rather than breaks: Rewind keeps buffering, just permanently at the idle rate. The log says so if you want to confirm which one you're getting.
 
 Grant permissions in System Settings → Privacy & Security, then quit and relaunch Framegentic. Neither takes effect on a running app. The menu bar shows **Grant…** shortcuts for whatever's missing — Accessibility's only appears once you've picked a target that needs it.
 
@@ -216,16 +164,28 @@ The `tccutil` calls remove the permission grants. Skip them if you plan to reins
 ```
 Sources/FramegenticKit/    Pure decision logic (display selection, capture geometry,
                            app resolution, delivery targets, paste guard, hotkey
-                           config, validation, persistence, and Rewind's ring
+                           config, validation, persistence, and the parked ring
                            buffer, dedup and temp-file lifecycle) — unit tested
 Sources/Framegentic/       AppKit/SwiftUI glue: menu bar, capture, delivery,
-                           settings, Rewind popover
+                           settings, parked Rewind popover
 Tests/FramegenticKitTests/ The kit's test suite
 Resources/                 Info.plist, app and menu bar icons
 scripts/                   build.sh and icon generators
 docs/                      Release process
 ```
 
+## Rewind (parked)
+
+An earlier build shipped a second mode: a rolling in-memory buffer of the last
+few minutes, with a timeline scrubber to trim a clip and send it. The buffer and
+the pipeline work. The delivery format is what didn't — a clip arrives as several
+images attached to one chat message, and a strip of thumbnails turns out to be a
+poor way to show an agent what happened.
+
+It's disabled rather than deleted. The code and its tests are still in the tree
+behind a single flag, so a better answer to "how do you hand an agent a span of
+time" can bring it back. Snap is unaffected.
+
 ## Notes
 
-Framegentic captures the full main display only. There's no region select, no multi-monitor picker and no history beyond Rewind's few-minute memory buffer. It's a single-purpose shortcut, not a general screenshot tool. Issues and PRs welcome — keep it single-purpose.
+Framegentic captures the full main display only. There's no region select, no multi-monitor picker and no history. It's a single-purpose shortcut, not a general screenshot tool. Issues and PRs welcome — keep it single-purpose.

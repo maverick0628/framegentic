@@ -33,11 +33,28 @@ final class SettingsModel {
         didSet { UserDefaults.standard.set(deliveryTarget.id, forKey: Self.deliveryTargetKey) }
     }
 
-    /// Off by default: an always-on screen recorder is not something to opt a
-    /// user out of. Snap works without it; enabling Rewind is what starts it.
+    /// Rewind is shipped disabled. Delivering a clip means attaching several
+    /// images to a chat message, which turns out to be a poor way to show an
+    /// agent what happened — not a tuning problem, since the frames are already
+    /// 1024px. Flip this to re-enable every Rewind surface at once; the code and
+    /// its tests are kept because the buffer and pipeline are sound and only the
+    /// delivery format is in question.
+    static let isRewindAvailable = false
+
+    /// Off by default even when available: an always-on screen recorder is not
+    /// something to opt a user out of. Snap works without it; enabling Rewind is
+    /// what starts it.
+    ///
+    /// Reading through `isRewindAvailable` rather than gating each consumer keeps
+    /// the kill switch to one place — every Rewind path already asks this.
     var bufferEnabled: Bool {
+        get { Self.isRewindAvailable && storedBufferEnabled }
+        set { storedBufferEnabled = newValue }
+    }
+
+    private var storedBufferEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(bufferEnabled, forKey: Self.bufferEnabledKey)
+            UserDefaults.standard.set(storedBufferEnabled, forKey: Self.bufferEnabledKey)
             onBufferEnabledChange?(bufferEnabled)
         }
     }
@@ -83,7 +100,7 @@ final class SettingsModel {
         let storedAutoDeleteTTL = UserDefaults.standard.object(forKey: Self.autoDeleteTTLKey) as? Int
         self.autoDeleteTTLSeconds = storedAutoDeleteTTL ?? 300
 
-        self.bufferEnabled = UserDefaults.standard.bool(forKey: Self.bufferEnabledKey)
+        self.storedBufferEnabled = UserDefaults.standard.bool(forKey: Self.bufferEnabledKey)
     }
 
     var canResetToDefault: Bool { hotKeyConfig != .default }
@@ -91,7 +108,12 @@ final class SettingsModel {
 
     func registerStoredHotKeys() {
         hotKeyRegistered = hotKey.register(hotKeyConfig, for: .capture)
-        rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
+        // Leaving the Rewind combo unregistered while the feature is off frees it
+        // for other apps, rather than silently holding a global hotkey that opens
+        // a popover the user can never reach.
+        if Self.isRewindAvailable {
+            rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
+        }
         refreshStartAtLogin()
     }
 
@@ -189,7 +211,12 @@ final class SettingsModel {
     func endRecording() {
         isRecording = false
         hotKeyRegistered = hotKey.register(hotKeyConfig, for: .capture)
-        rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
+        // Leaving the Rewind combo unregistered while the feature is off frees it
+        // for other apps, rather than silently holding a global hotkey that opens
+        // a popover the user can never reach.
+        if Self.isRewindAvailable {
+            rewindHotKeyRegistered = hotKey.register(rewindHotKeyConfig, for: .rewind)
+        }
         onRecordingStateChange?(false)
     }
 
