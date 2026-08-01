@@ -176,15 +176,11 @@ docs/                      Release process
 
 ## Rewind (parked)
 
-An earlier build shipped a second mode: a rolling in-memory buffer of the last
-few minutes, with a timeline scrubber to trim a clip and send it. The buffer and
-the pipeline work. The delivery format is what didn't — a clip arrives as several
-images attached to one chat message, and a strip of thumbnails turns out to be a
-poor way to show an agent what happened.
-
-It's disabled rather than deleted. The code and its tests are still in the tree
-behind a single flag, so a better answer to "how do you hand an agent a span of
-time" can bring it back. Snap is unaffected.
+A second mode — a rolling buffer of the last few minutes with a scrubber to trim
+and send a clip — is built but switched off behind `isRewindAvailable`. The buffer
+works; the delivery format didn't. A clip arrives as a strip of thumbnails, which
+turns out to be a poor way to show an agent what happened. The code and its tests
+stay in the tree in case there's a better answer. Snap is unaffected.
 
 ## Notes
 

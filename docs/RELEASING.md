@@ -15,12 +15,16 @@ Six repository secrets (Settings → Secrets and variables → Actions):
 | `ASC_ISSUER_ID` | App Store Connect issuer UUID |
 | `ASC_API_KEY_P8` | Contents of the .p8 private key |
 
-Export the cert (identity: `Developer ID Application: Duncan Smith (5V849Q2B6Z)`):
+Export the Developer ID Application cert from Keychain Access — **My Certificates**,
+right-click the identity, Export as `.p12`, and set an export password. Then:
 
 ```bash
-security export -k login.keychain -t identities -f pkcs12 -o cert.p12
 base64 -i cert.p12 | pbcopy
 ```
+
+Export from Keychain Access rather than `security export -t identities`, which writes
+*every* identity in the keychain into one `.p12`. `security find-identity -v -p codesigning`
+lists what you have.
 
 Create the API key at App Store Connect → Users and Access → Integrations → App Store Connect API. Developer role is enough for notarization.
 
