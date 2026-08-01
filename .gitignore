@@ -10,6 +10,12 @@
 .letta/
 .full-review/
 
+# Working documents, kept locally and out of the published repo. PLAN.md is a
+# scratchpad that named local paths and a private sibling repo; the design specs
+# are internal build notes. DECISIONS.md is the record meant for readers.
+PLAN.md
+docs/superpowers/
+
 # Written into the repo root by the release steps in .github/workflows/ci.yml.
 # CI runners are ephemeral, but running those steps by hand is not.
 cert.p12

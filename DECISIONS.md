@@ -403,7 +403,7 @@ system (Carbon, configurable, validated, 34 tests) against FrameSnap's capture
 
 This repo is the target rather than FrameSnap's: it is SwiftPM and Swift 6, has the
 notarizing release workflow, and is current. FrameSnap is an Xcode project untouched
-since June. See docs/superpowers/specs/2026-07-31-framegentic-merge-design.md.
+since June.
 
 ## 2026-07-31 — Delivery is a target, not a mode; clipboard-only is the default
 
@@ -454,8 +454,7 @@ reachability of every row.
 ## 2026-07-29 — Shortcut customization shipped
 
 Recorder, validator, `UserDefaults` persistence and a SwiftUI settings window, with the
-menu bar keeping its own toggles. Implemented per
-`docs/superpowers/specs/2026-07-29-shortcut-customization-design.md`.
+menu bar keeping its own toggles.
 
 ## 2026-07-29 — Keep Auto-send and Start-at-login in both the menu and Settings
 
