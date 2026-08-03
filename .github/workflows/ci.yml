@@ -105,8 +105,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Framegentic $GITHUB_REF_NAME" \
-            --generate-notes \
-            "Framegentic-${GITHUB_REF_NAME#v}.zip" \
-            "Framegentic-${GITHUB_REF_NAME#v}.zip.sha256"
+          # Release notes come from this tag's CHANGELOG.md section. Generated
+          # notes span every commit when there is no previous tag, which on a
+          # first release is a commit dump rather than something worth reading.
+          # Falls back to generated notes so a tag with no entry still ships.
+          awk -v tag="$GITHUB_REF_NAME" '
+            BEGIN { head = "## " tag }
+            substr($0, 1, length(head)) == head && \
+              (length($0) == length(head) || substr($0, length(head) + 1, 1) == " ") \
+              { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+
+          if [ -s notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "Framegentic $GITHUB_REF_NAME" \
+              --notes-file notes.md \
+              "Framegentic-${GITHUB_REF_NAME#v}.zip" \
+              "Framegentic-${GITHUB_REF_NAME#v}.zip.sha256"
+          else
+            echo "No CHANGELOG.md section for $GITHUB_REF_NAME — generating notes instead."
+            gh release create "$GITHUB_REF_NAME" \
+              --title "Framegentic $GITHUB_REF_NAME" \
+              --generate-notes \
+              "Framegentic-${GITHUB_REF_NAME#v}.zip" \
+              "Framegentic-${GITHUB_REF_NAME#v}.zip.sha256"
+          fi
