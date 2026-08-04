@@ -58,6 +58,12 @@ jobs:
     needs: build-test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-15
+    # This repo's default workflow token is read-only, so `gh release create`
+    # gets HTTP 403 without this. Granted on the release job alone rather than
+    # at the workflow root, so build-test — the job that runs on every PR,
+    # including from forks once this is public — stays read-only.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
