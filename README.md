@@ -121,6 +121,14 @@ A delivery target that auto-pastes (Claude, today) needs two more things:
 
 Grant permissions in System Settings → Privacy & Security, then quit and relaunch Framegentic. Neither takes effect on a running app. The menu bar shows **Grant…** shortcuts for whatever's missing — Accessibility's only appears once you've picked a target that needs it.
 
+## Install
+
+Download the zip from the [latest release](https://github.com/maverick0628/framegentic/releases/latest), unzip it and move `Framegentic.app` to `/Applications`. Release builds are signed with Developer ID and notarized. Check the download against the published checksum:
+
+```bash
+shasum -a 256 -c Framegentic-1.0.0.zip.sha256
+```
+
 ## Build
 
 ```bash
