@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-09-25 — README screenshots are window-only captures
+
+The menu and Settings screenshots are captured per window with `screencapture -l`, so they carry
+no menu bar clock, other status items or desktop. They show a Claude target and a custom `⇧⌘7`
+shortcut rather than a fresh install's defaults, and the README says so beside them. Rewind's
+popover is left out because it ships disabled.
+
 ## 2026-07-31 — Rewind ships disabled behind one flag, code kept
 
 Rewind's output failed its first real use. A delivered clip lands in Claude as several images

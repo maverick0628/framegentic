@@ -31,6 +31,8 @@ Press `⇧⌘6` (or pick the capture item from the menu bar — it reads **Captu
 to Clipboard** or **Capture → Claude**, matching your current delivery
 target). Framegentic:
 
+<img src="docs/screenshots/menu.png" alt="The Framegentic menu bar menu: Capture → Claude, Settings, Send Automatically After Paste, Start at Login, About and Quit" width="463">
+
 1. Captures your main display with ScreenCaptureKit at its native scale.
 2. Writes the image to the clipboard as PNG, marked concealed so clipboard managers and Handoff skip it.
 
@@ -52,6 +54,11 @@ Where a capture goes is a setting, not a fixed behavior — pick it from **Deliv
 - Nothing can steal your focus mid-capture, because nothing gets activated.
 
 **Claude** is the one auto-paste target today. Pick it and Framegentic activates the Claude desktop app, waits for it to come to the front and pastes for you — turn on **Send Automatically After Paste** if you want it submitted too. Adding another target — ChatGPT, Cursor, whatever's next — is a table entry, not a rewrite.
+
+<img src="docs/screenshots/settings.png" alt="Framegentic Settings: capture shortcut field, Deliver to set to Claude, Send automatically after paste checked, Start at login" width="425">
+
+Both screenshots show the app set up for Claude with a custom `⇧⌘7`
+shortcut. A fresh install starts on Clipboard only and `⇧⌘6`.
 
 ## Changing the shortcut
 
